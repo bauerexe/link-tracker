@@ -2,52 +2,101 @@ package main
 
 import (
 	"context"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
+	"io"
+	stdlog "log"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/spf13/afero"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	botrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/bot"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	cfgZap := zap.NewProductionConfig()
-	cfgZap.EncoderConfig.TimeKey = "ts"
-	cfgZap.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	log, _ := cfgZap.Build()
-	log = log.Named("main")
-	log = log.With(zap.String("pkg", "cmd"))
+	app := fx.New(
+		fx.Provide(
+			newZap,
+			newConfig,
+			newRouter,
+			newBotRepo,
+			newBotUsecase,
+		),
+		fx.Invoke(
+			tgBotApiDiscard,
+			runBot,
+		),
+	)
 
-	defer func(log *zap.Logger) {
-		_ = log.Sync()
-	}(log)
+	app.Run()
+}
 
-	cfg, err := config.NewBotConfig()
+func newConfig(log *zap.Logger) (config.BotConfig, error) {
+	fs := afero.NewOsFs()
+	cfg, err := config.NewBotConfig(fs)
 	if err != nil {
-		log.Panic("failed to parse config")
+		return config.BotConfig{}, err
 	}
-	log.Info("config parsed: OK")
+	log.Info("init config")
+	return cfg, nil
+}
 
-	repo, err := botrepo.New(cfg.TokenTGBot, log)
+func newZap() (*zap.Logger, error) {
+	cfg := zap.NewProductionConfig()
+	cfg.EncoderConfig.TimeKey = "ts"
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	log, err := cfg.Build()
 	if err != nil {
-		log.Panic(err.Error())
+		return nil, err
 	}
-	log.Info("repository init: OK")
 
-	router := botapp.NewBotDispatcher(map[domain.Command]domain.Handler{
+	log = log.Named("bot").With(zap.String("service", "bot"))
+	return log, nil
+}
+
+func newRouter() *botapp.BotDispatcher {
+	return botapp.NewBotDispatcher(map[domain.Command]domain.Handler{
 		botapp.CommandStart: botapp.NewStartHandler(),
 		botapp.CommandHelp:  botapp.NewHelpHandler(),
 	})
+}
 
-	bot, err := botapp.NewBot(cfg.TokenTGBot, repo, router, log)
-	if err != nil {
-		log.Panic(err.Error())
-	}
-	if bot == nil {
-		log.Panic("bot is nil")
-	}
-	log.Info("bot init: OK")
-	if err := bot.Run(context.Background()); err != nil {
-		log.Panic(err.Error())
-	}
+func newBotRepo(cfg config.BotConfig,
+	log *zap.Logger) (botapp.BotRepository, error) {
+	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"))
+}
+
+func newBotUsecase(cfg config.BotConfig,
+	repo botapp.BotRepository,
+	router *botapp.BotDispatcher,
+	log *zap.Logger) (*botapp.Bot, error) {
+	return botapp.NewBot(cfg.TokenTGBot, repo, router, log.With(zap.String("layer", "application")).Named("usecase.bot"))
+}
+
+func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			log.Info("starting bot")
+			go func() {
+				if err := bot.Run(context.Background()); err != nil {
+					log.Error("bot stopped with error", zap.Error(err))
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("stopping bot")
+			_ = log.Sync()
+			return nil
+		},
+	})
+}
+
+func tgBotApiDiscard() {
+	_ = tgbotapi.SetLogger(stdlog.New(io.Discard, "", 0))
 }

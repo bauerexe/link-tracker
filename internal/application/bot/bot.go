@@ -3,8 +3,9 @@ package botapp
 import (
 	"context"
 	"errors"
-	"go.uber.org/zap"
 	"strings"
+
+	"go.uber.org/zap"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
