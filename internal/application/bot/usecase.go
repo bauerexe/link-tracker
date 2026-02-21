@@ -6,6 +6,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
+//go:generate mockgen -source usecase.go -package botapp -destination usecase_mock.go
 type BotRepository interface {
 	GetMessages(ctx context.Context, timeoutSec int) (<-chan domain.Message, error)
 	SendMessage(chatID int64, replyToMessageID int, text string) error

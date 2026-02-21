@@ -6,8 +6,9 @@ require (
 	github.com/byrnedo/typesafe-config v1.0.2
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/spf13/afero v1.15.0
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.9.0
 	go.uber.org/fx v1.24.0
+	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.27.1
 )
 

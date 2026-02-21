@@ -67,14 +67,16 @@ func newRouter() *botapp.BotDispatcher {
 }
 
 func newBotRepo(cfg config.BotConfig,
-	log *zap.Logger) (botapp.BotRepository, error) {
+	log *zap.Logger,
+) (botapp.BotRepository, error) {
 	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"))
 }
 
 func newBotUsecase(cfg config.BotConfig,
 	repo botapp.BotRepository,
 	router *botapp.BotDispatcher,
-	log *zap.Logger) (*botapp.Bot, error) {
+	log *zap.Logger,
+) (*botapp.Bot, error) {
 	return botapp.NewBot(cfg.TokenTGBot, repo, router, log.With(zap.String("layer", "application")).Named("usecase.bot"))
 }
 
@@ -83,7 +85,7 @@ func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
 		OnStart: func(ctx context.Context) error {
 			log.Info("starting bot")
 			go func() {
-				if err := bot.Run(context.Background()); err != nil {
+				if err := bot.Run(ctx); err != nil {
 					log.Error("bot stopped with error", zap.Error(err))
 				}
 			}()
@@ -91,8 +93,19 @@ func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
 		},
 		OnStop: func(ctx context.Context) error {
 			log.Info("stopping bot")
-			_ = log.Sync()
-			return nil
+
+			done := make(chan struct{})
+			go func() {
+				_ = log.Sync()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		},
 	})
 }

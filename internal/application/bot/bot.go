@@ -94,7 +94,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 }
 
-func parseCommand(text string) (cmd string, args string) {
+func parseCommand(text string) (cmd, args string) {
 	parts := strings.Fields(text)
 	if len(parts) == 0 {
 		return "", ""

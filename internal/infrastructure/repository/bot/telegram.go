@@ -34,7 +34,6 @@ func New(token string, log *zap.Logger) (botapp.BotRepository, error) {
 
 	cfg := tgbotapi.NewSetMyCommands(tgbotapi.BotCommand{Command: "help", Description: "помощь"}, tgbotapi.BotCommand{Command: "start", Description: "старт"})
 	_, err = api.Request(cfg)
-
 	if err != nil {
 		log.Error("error set commands to bot")
 		return nil, err

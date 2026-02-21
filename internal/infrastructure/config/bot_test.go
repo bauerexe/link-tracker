@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -17,9 +18,9 @@ func TestConfig(t *testing.T) {
 		err      error
 		positive bool
 	}
-	var initFunc = func(str string) func(testFs afero.Fs) {
+	initFunc := func(str string) func(testFs afero.Fs) {
 		return func(testFs afero.Fs) {
-			afero.WriteFile(testFs, ".env", []byte(str), 0644)
+			_ = afero.WriteFile(testFs, ".env", []byte(str), 0o644)
 		}
 	}
 
@@ -70,8 +71,11 @@ func TestConfig(t *testing.T) {
 			} else if err != nil {
 				assert.EqualError(t, err, tc.err.Error())
 			}
-			assert.Equal(t, tc.expected, cfg.TokenTGBot)
+			if !tc.positive {
+				assert.Error(t, fmt.Errorf("expected err"))
+			} else {
+				assert.Equal(t, tc.expected, cfg.TokenTGBot)
+			}
 		})
 	}
-
 }

@@ -1,6 +1,7 @@
 package botapp
 
 import (
+	"errors"
 	"fmt"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
@@ -10,6 +11,8 @@ const (
 	CommandStart domain.Command = "/start"
 	CommandHelp  domain.Command = "/help"
 )
+
+var ErrorUnknownCommand = errors.New("error unknown command")
 
 // BotDispatcher - dispatcher of commands and them handlers
 type BotDispatcher struct {
