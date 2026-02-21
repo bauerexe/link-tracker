@@ -1,4 +1,4 @@
-package bot
+package main
 
 import (
 	"context"
@@ -18,7 +18,9 @@ func main() {
 	log = log.Named("main")
 	log = log.With(zap.String("pkg", "cmd"))
 
-	defer log.Sync()
+	defer func(log *zap.Logger) {
+		_ = log.Sync()
+	}(log)
 
 	cfg, err := config.NewBotConfig()
 	if err != nil {
@@ -40,6 +42,9 @@ func main() {
 	bot, err := botapp.NewBot(cfg.TokenTGBot, repo, router, log)
 	if err != nil {
 		log.Panic(err.Error())
+	}
+	if bot == nil {
+		log.Panic("bot is nil")
 	}
 	log.Info("bot init: OK")
 	if err := bot.Run(context.Background()); err != nil {

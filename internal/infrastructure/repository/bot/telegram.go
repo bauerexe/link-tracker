@@ -3,6 +3,8 @@ package bot_repo
 import (
 	"context"
 	"go.uber.org/zap"
+	"io"
+	stdlog "log"
 	"net/http"
 	"time"
 
@@ -24,6 +26,7 @@ func New(token string, log *zap.Logger) (botapp.BotRepository, error) {
 	httpClient := &http.Client{Timeout: 60 * time.Second}
 	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
 	api.Debug = false
+	tgbotapi.SetLogger(stdlog.New(io.Discard, "", 0))
 	if err != nil {
 		log.Error("error connect to bot api")
 		return nil, err
