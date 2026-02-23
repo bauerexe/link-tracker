@@ -1,4 +1,4 @@
-package bot_repo
+package bot_gateway
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
-// BotRepository - repository for work with tg bot api
+// BotRepository - gateway for work with tg bot api
 type BotRepository struct {
 	api *tgbotapi.BotAPI
 	log *zap.Logger
@@ -50,7 +50,6 @@ func (r *BotRepository) GetMessages(ctx context.Context, timeoutSec int) (<-chan
 	r.log.Info("start receiving updates", zap.Int("timeout_sec", timeoutSec))
 
 	tgCh := r.api.GetUpdatesChan(u)
-
 	out := make(chan domain.Message)
 
 	go func() {
@@ -67,35 +66,46 @@ func (r *BotRepository) GetMessages(ctx context.Context, timeoutSec int) (<-chan
 				return
 
 			case upd, ok := <-tgCh:
-				if !ok {
-					r.log.Warn("telegram updates channel closed")
-					return
-				}
-				if upd.Message == nil {
-					continue
-				}
-
-				msg := domain.Message{
-					ChatID:    upd.Message.Chat.ID,
-					Text:      upd.Message.Text,
-					MessageID: upd.Message.MessageID,
-				}
-
-				r.log.Debug("message received",
-					zap.Int64("chat_id", msg.ChatID),
-					zap.Int("message_id", msg.MessageID),
-				)
-
-				select {
-				case out <- msg:
-				case <-ctx.Done():
-					r.log.Info("context cancelled while forwarding message", zap.Error(ctx.Err()))
+				if !r.handleTelegramUpdate(ctx, out, upd, ok) {
 					return
 				}
 			}
 		}
 	}()
+
 	return out, nil
+}
+
+func (r *BotRepository) handleTelegramUpdate(ctx context.Context, out chan<- domain.Message, upd tgbotapi.Update,
+	ok bool,
+) bool {
+	if !ok {
+		r.log.Warn("telegram updates channel closed")
+		return false
+	}
+
+	if upd.Message == nil {
+		return true
+	}
+
+	msg := domain.Message{
+		ChatID:    upd.Message.Chat.ID,
+		Text:      upd.Message.Text,
+		MessageID: upd.Message.MessageID,
+	}
+
+	r.log.Debug("message received",
+		zap.Int64("chat_id", msg.ChatID),
+		zap.Int("message_id", msg.MessageID),
+	)
+
+	select {
+	case out <- msg:
+		return true
+	case <-ctx.Done():
+		r.log.Info("context cancelled while forwarding message", zap.Error(ctx.Err()))
+		return false
+	}
 }
 
 func (r *BotRepository) SendMessage(chatID int64, replyToMessageID int, text string) error {

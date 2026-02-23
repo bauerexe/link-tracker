@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/afero"
 )
 
+const envFile = ".env"
+
 // BotConfig - struct with all that need 'Telegram Bot Service' to work
 type BotConfig struct {
 	TokenTGBot string `config:"app_telegram_token"`
@@ -21,7 +23,8 @@ var (
 func NewBotConfig(fs afero.Fs) (BotConfig, error) {
 	var tree *parse.Tree
 	var err error
-	file, err := afero.ReadFile(fs, ".env")
+
+	file, err := afero.ReadFile(fs, envFile)
 	if err != nil {
 		return BotConfig{}, ErrorReadFile
 	}

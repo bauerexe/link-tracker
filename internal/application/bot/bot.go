@@ -36,62 +36,77 @@ func NewBot(token string, botRepository BotRepository, router *BotDispatcher, lo
 func (b *Bot) Run(ctx context.Context) error {
 	updates, err := b.botRepository.GetMessages(ctx, 60)
 	if err != nil {
-		b.log.Error(
-			"error invalid command",
-			zap.String("error", err.Error()),
-		)
+		b.log.Error("failed to get messages", zap.Error(err))
 		return err
 	}
+
 	b.log.Info("bot run")
+
 	for {
 		select {
 		case <-ctx.Done():
-			b.log.Info("ctx done", zap.String("err", ctx.Err().Error()))
+			b.log.Info("ctx done", zap.Error(ctx.Err()))
 			return ctx.Err()
 
 		case upd, ok := <-updates:
-			b.log = b.log.With(
-				zap.String("msg", upd.Text),
-				zap.Int("msgId", upd.MessageID),
-				zap.Int64("chatId", upd.ChatID))
-			b.log.Info("bot got message")
-			if !ok {
+			cont, err := b.handleIncomingMessage(upd, ok)
+			if err != nil {
+				return err
+			}
+			if !cont {
 				return nil
 			}
-
-			if strings.TrimSpace(upd.Text) == "" {
-				continue
-			}
-
-			chatID := upd.ChatID
-			text := strings.TrimSpace(upd.Text)
-
-			cmd, args := parseCommand(text)
-
-			replyText, derr := b.router.Dispatch(chatID, domain.Command(cmd), args)
-			if derr != nil {
-				b.log.Error(
-					"error invalid command",
-					zap.String("command", cmd),
-					zap.String("error", derr.Error()),
-				)
-				return derr
-			}
-			b.log.Info("bot dispatched message to reply",
-				zap.String("reply", replyText),
-			)
-			if serr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText); serr != nil {
-				b.log.Error(
-					"error send message",
-					zap.String("error", serr.Error()),
-				)
-				return serr
-			}
-			b.log.Info("bot sent reply message to user",
-				zap.String("reply", replyText),
-			)
 		}
 	}
+}
+
+func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
+	if !ok {
+		b.log.Info("updates channel closed")
+		return false, nil
+	}
+
+	logger := b.log.With(
+		zap.String("msg", upd.Text),
+		zap.Int("msgId", upd.MessageID),
+		zap.Int64("chatId", upd.ChatID),
+	)
+	logger.Info("bot got message")
+
+	text := strings.TrimSpace(upd.Text)
+	if text == "" {
+		return true, nil
+	}
+
+	if err := b.processMessage(logger, upd, text); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string) error {
+	cmd, args := parseCommand(text)
+
+	replyText, err := b.router.Dispatch(upd.ChatID, domain.Command(cmd), args)
+	if err != nil {
+		logger.Error(
+			"error invalid command",
+			zap.String("command", cmd),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	logger.Info("bot dispatched message to reply", zap.String("reply", replyText))
+
+	if err := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText); err != nil {
+		logger.Error("error send message", zap.Error(err))
+		return err
+	}
+
+	logger.Info("bot sent reply message to user", zap.String("reply", replyText))
+	return nil
 }
 
 func parseCommand(text string) (cmd, args string) {

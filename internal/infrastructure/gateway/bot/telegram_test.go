@@ -1,4 +1,4 @@
-package bot_repo
+package bot_gateway
 
 import (
 	"context"
