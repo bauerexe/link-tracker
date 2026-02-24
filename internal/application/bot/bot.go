@@ -17,6 +17,8 @@ type Bot struct {
 	log           *zap.Logger
 }
 
+const timeoutSec = 60
+
 func NewBot(token string, botRepository BotRepository, router *BotDispatcher, log *zap.Logger) (*Bot, error) {
 	log = log.Named("application")
 	log = log.With(zap.String("pkg", "botapp"))
@@ -34,7 +36,8 @@ func NewBot(token string, botRepository BotRepository, router *BotDispatcher, lo
 }
 
 func (b *Bot) Run(ctx context.Context) error {
-	updates, err := b.botRepository.GetMessages(ctx, 60)
+
+	updates, err := b.botRepository.GetMessages(ctx, timeoutSec)
 	if err != nil {
 		b.log.Error("failed to get messages", zap.Error(err))
 		return err
@@ -88,7 +91,7 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string) error {
 	cmd, args := parseCommand(text)
 
-	replyText, err := b.router.Dispatch(upd.ChatID, domain.Command(cmd), args)
+	replyText, err := b.router.Dispatch(upd, domain.Command(cmd), args)
 	if err != nil {
 		logger.Error(
 			"error invalid command",

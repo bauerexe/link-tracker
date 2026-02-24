@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	botrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/bot"
 )
@@ -60,10 +59,7 @@ func newZap() (*zap.Logger, error) {
 }
 
 func newRouter() *botapp.BotDispatcher {
-	return botapp.NewBotDispatcher(map[domain.Command]domain.Handler{
-		botapp.CommandStart: botapp.NewStartHandler(),
-		botapp.CommandHelp:  botapp.NewHelpHandler(),
-	})
+	return botapp.NewBotDispatcher(nil)
 }
 
 func newBotRepo(cfg config.BotConfig,

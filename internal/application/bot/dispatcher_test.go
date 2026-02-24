@@ -48,7 +48,7 @@ func TestBotDispatcher_Dispatch(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			dispatch, err := dp.Dispatch(1, tc.command, "")
+			dispatch, err := dp.Dispatch(domain.Message{ChatID: 1}, tc.command, "")
 			if err != nil && tc.positive {
 				assert.Error(t, err, "err in positive test")
 			} else if err != nil {

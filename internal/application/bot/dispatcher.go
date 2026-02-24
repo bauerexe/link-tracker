@@ -21,7 +21,10 @@ type BotDispatcher struct {
 
 func NewBotDispatcher(handlers map[domain.Command]domain.Handler) *BotDispatcher {
 	if handlers == nil {
-		handlers = map[domain.Command]domain.Handler{}
+		handlers = map[domain.Command]domain.Handler{
+			CommandStart: NewStartHandler(),
+			CommandHelp:  NewHelpHandler(),
+		}
 	}
 	return &BotDispatcher{handlers: handlers}
 }
@@ -49,10 +52,10 @@ func NewHelpHandler() domain.Handler {
 }
 
 // Dispatch - return of the handler's work
-func (r *BotDispatcher) Dispatch(chatID int64, cmd domain.Command, args string) (string, error) {
+func (r *BotDispatcher) Dispatch(message domain.Message, cmd domain.Command, args string) (string, error) {
 	h, ok := r.handlers[cmd]
 	if !ok {
 		return fmt.Sprintf("Не знаю команду %s. Напиши /help", cmd), nil
 	}
-	return h.Handle(chatID, args)
+	return h.Handle(message.ChatID, args)
 }
