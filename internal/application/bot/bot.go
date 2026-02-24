@@ -53,7 +53,7 @@ func (b *Bot) Run(ctx context.Context) error {
 
 		case upd, ok := <-updates:
 			cont, err := b.handleIncomingMessage(upd, ok)
-			if err != nil {
+			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
 				return err
 			}
 			if !cont {
@@ -78,7 +78,7 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 
 	text := strings.TrimSpace(upd.Text)
 	if text == "" {
-		return true, nil
+		return true, ErrorUnknownCommand
 	}
 
 	if err := b.processMessage(logger, upd, text); err != nil {
