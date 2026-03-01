@@ -99,7 +99,7 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 	repo, err := New(token, zap.NewNop())
 	require.NoError(t, err)
 
-	r, ok := repo.(*BotRepository)
+	r, ok := repo.(*BotGateway)
 	require.True(t, ok)
 
 	mu.Lock()

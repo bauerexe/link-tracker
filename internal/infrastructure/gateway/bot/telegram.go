@@ -13,14 +13,14 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
-// BotRepository - gateway for work with tg bot api
-type BotRepository struct {
+// BotGateway - gateway for work with tg bot api
+type BotGateway struct {
 	api *tgbotapi.BotAPI
 	log *zap.Logger
 }
 
-// New - return inited botapp.BotRepository
-func New(token string, log *zap.Logger) (botapp.BotRepository, error) {
+// New - return inited botapp.BotGateway
+func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
 	log = log.Named("infrastructure.telegram")
 	log = log.With(zap.String("pkg", log.Name()))
 	httpClient := &http.Client{Timeout: 60 * time.Second}
@@ -41,10 +41,10 @@ func New(token string, log *zap.Logger) (botapp.BotRepository, error) {
 
 	api.Debug = true
 
-	return &BotRepository{api: api, log: log}, nil
+	return &BotGateway{api: api, log: log}, nil
 }
 
-func (r *BotRepository) GetMessages(ctx context.Context, timeoutSec int) (<-chan domain.Message, error) {
+func (r *BotGateway) GetMessages(ctx context.Context, timeoutSec int) (<-chan domain.Message, error) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = timeoutSec
 	r.log.Info("start receiving updates", zap.Int("timeout_sec", timeoutSec))
@@ -76,7 +76,7 @@ func (r *BotRepository) GetMessages(ctx context.Context, timeoutSec int) (<-chan
 	return out, nil
 }
 
-func (r *BotRepository) handleTelegramUpdate(ctx context.Context, out chan<- domain.Message, upd tgbotapi.Update,
+func (r *BotGateway) handleTelegramUpdate(ctx context.Context, out chan<- domain.Message, upd tgbotapi.Update,
 	ok bool,
 ) bool {
 	if !ok {
@@ -108,7 +108,7 @@ func (r *BotRepository) handleTelegramUpdate(ctx context.Context, out chan<- dom
 	}
 }
 
-func (r *BotRepository) SendMessage(chatID int64, replyToMessageID int, text string) error {
+func (r *BotGateway) SendMessage(chatID int64, replyToMessageID int, text string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyToMessageID = replyToMessageID
 

@@ -64,12 +64,12 @@ func newRouter() *botapp.BotDispatcher {
 
 func newBotRepo(cfg config.BotConfig,
 	log *zap.Logger,
-) (botapp.BotRepository, error) {
+) (botapp.BotGateway, error) {
 	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"))
 }
 
 func newBotUsecase(cfg config.BotConfig,
-	repo botapp.BotRepository,
+	repo botapp.BotGateway,
 	router *botapp.BotDispatcher,
 	log *zap.Logger,
 ) (*botapp.Bot, error) {

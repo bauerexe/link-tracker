@@ -12,14 +12,14 @@ import (
 
 // Bot - use case
 type Bot struct {
-	botRepository BotRepository
+	botRepository BotGateway
 	router        *BotDispatcher
 	log           *zap.Logger
 }
 
 const timeoutSec = 60
 
-func NewBot(token string, botRepository BotRepository, router *BotDispatcher, log *zap.Logger) (*Bot, error) {
+func NewBot(token string, botRepository BotGateway, router *BotDispatcher, log *zap.Logger) (*Bot, error) {
 	log = log.Named("application")
 	log = log.With(zap.String("pkg", "botapp"))
 
