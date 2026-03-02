@@ -29,7 +29,6 @@ func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
 	log = log.With(zap.String("pkg", log.Name()))
 	httpClient := &http.Client{Timeout: timeoutSec * time.Second}
 	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
-	api.Debug = false
 
 	if err != nil {
 		log.Error("error connect to bot api")

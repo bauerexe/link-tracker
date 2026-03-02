@@ -14,11 +14,6 @@ const (
 
 var ErrorUnknownCommand = errors.New("error unknown command")
 
-// BotDispatcher - dispatcher of commands and them handlers
-type BotDispatcher struct {
-	handlers map[domain.Command]domain.Handler
-}
-
 func NewBotDispatcher(handlers map[domain.Command]domain.Handler) *BotDispatcher {
 	if handlers == nil {
 		handlers = map[domain.Command]domain.Handler{
@@ -27,6 +22,11 @@ func NewBotDispatcher(handlers map[domain.Command]domain.Handler) *BotDispatcher
 		}
 	}
 	return &BotDispatcher{handlers: handlers}
+}
+
+// BotDispatcher - dispatcher of commands and them handlers
+type BotDispatcher struct {
+	handlers map[domain.Command]domain.Handler
 }
 
 // StartHandler - handler of message with command - CommandStart
