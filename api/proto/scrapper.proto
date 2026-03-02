@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package scrapper.v1;
+
+option go_package = "pkg/api/proto/pb/v1;pbv1";
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+
+service Scrapper {
+  rpc CreateChat(CreateChatRequest) returns (ChatResponse) {
+    option (google.api.http) = {
+      post: "/tg-chat/{id}"
+    };
+  }
+
+  rpc DeleteChat(DeleteChatRequest) returns (ChatResponse) {
+    option (google.api.http) = {
+      delete: "/tg-chat/{id}"
+    };
+  }
+
+  rpc CreateLink(CreateLinkRequest) returns (LinkResponse) {
+    option (google.api.http) = {
+      post: "/links"
+      body: "*"
+    };
+  }
+
+  rpc GetLinks(GetLinksRequest) returns (ListLinksResponse) {
+    option (google.api.http) = {
+      get: "/links"
+    };
+  }
+
+  rpc DeleteLink(DeleteLinkRequest) returns (LinkResponse) {
+    option (google.api.http) = {
+      delete: "/links"
+      body: "*"
+    };
+  }
+}
+
+message CreateChatRequest {
+  int64 id = 1 [(validate.rules).int64 = { gt: 0 }];
+}
+
+message DeleteChatRequest {
+  int64 id = 1 [(validate.rules).int64 = { gt: 0 }];
+}
+
+message ChatResponse {
+  int64 id = 1;
+}
+
+message CreateLinkRequest {
+  int64 chat_id = 1 [(validate.rules).int64 = { gte: 0 }];
+  string link = 2 [(validate.rules).string = { uri: true, min_len: 1 }];
+
+  repeated string tags = 3 [(validate.rules).repeated = {
+    max_items: 50
+    items: { string: { min_len: 1, max_len: 100 } }
+  }];
+
+  repeated string filters = 4 [(validate.rules).repeated = {
+    max_items: 50
+    items: { string: { min_len: 1, max_len: 200 } }
+  }];
+}
+
+message GetLinksRequest {
+  int64 chat_id = 1 [(validate.rules).int64 = { gte: 0 }];
+}
+
+message DeleteLinkRequest {
+  int64 chat_id = 1 [(validate.rules).int64 = { gte: 0 }];
+  string link = 2 [(validate.rules).string = { uri: true, min_len: 1 }];
+}
+
+message LinkResponse {
+  int64 id = 1;
+  string url = 2 [(validate.rules).string = { uri: true, min_len: 1 }];
+  repeated string tags = 3;
+  repeated string filters = 4;
+}
+
+message ListLinksResponse {
+  repeated LinkResponse links = 1;
+  int32 size = 2 [(validate.rules).int32 = { gte: 0 }];
+}

@@ -36,7 +36,6 @@ func NewBot(token string, botRepository BotGateway, router *BotDispatcher, log *
 }
 
 func (b *Bot) Run(ctx context.Context) error {
-
 	updates, err := b.botRepository.GetMessages(ctx, timeoutSec)
 	if err != nil {
 		b.log.Error("failed to get messages", zap.Error(err))
