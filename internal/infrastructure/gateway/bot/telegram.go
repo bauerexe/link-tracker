@@ -19,11 +19,15 @@ type BotGateway struct {
 	log *zap.Logger
 }
 
+const timeoutSec = 60
+
+var commandsToSet = []tgbotapi.BotCommand{{Command: "help", Description: "помощь"}, {Command: "start", Description: "старт"}}
+
 // New - return inited botapp.BotGateway
 func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
 	log = log.Named("infrastructure.telegram")
 	log = log.With(zap.String("pkg", log.Name()))
-	httpClient := &http.Client{Timeout: 60 * time.Second}
+	httpClient := &http.Client{Timeout: timeoutSec * time.Second}
 	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
 	api.Debug = false
 
@@ -32,10 +36,10 @@ func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
 		return nil, err
 	}
 
-	cfg := tgbotapi.NewSetMyCommands(tgbotapi.BotCommand{Command: "help", Description: "помощь"}, tgbotapi.BotCommand{Command: "start", Description: "старт"})
+	cfg := tgbotapi.NewSetMyCommands(commandsToSet...)
 	_, err = api.Request(cfg)
 	if err != nil {
-		log.Error("error set commands to bot")
+		log.Error("error set commandsToSet to bot")
 		return nil, err
 	}
 

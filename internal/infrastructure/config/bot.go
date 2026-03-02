@@ -16,7 +16,7 @@ type BotConfig struct {
 
 var (
 	ErrorReadFile  = errors.New("error while read file")
-	ErrorParseFile = errors.New("error while read file")
+	ErrorParseFile = errors.New("error while parse file")
 )
 
 // NewBotConfig - init and parse config file '.env' in root, with prefix 'bot'
