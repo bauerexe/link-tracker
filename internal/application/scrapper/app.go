@@ -16,18 +16,21 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
 type Scrapper struct {
 	server pbv1.ScrapperServer
 	log    *zap.Logger
+	cfg    *config.ScrapperConfig
 }
 
-func New(server pbv1.ScrapperServer, log *zap.Logger) Scrapper {
+func New(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) Scrapper {
 	return Scrapper{
 		server: server,
 		log:    log,
+		cfg:    cfg,
 	}
 }
 
@@ -51,14 +54,14 @@ func (s *Scrapper) runRest(ctx context.Context) {
 		}))
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
-	address := "localhost:" + "50051"
+	address := s.cfg.ScrapperAddrGRPC
 	err := pbv1.RegisterScrapperHandlerFromEndpoint(ctx, mux, address, opts)
 	if err != nil {
 		s.log.Error("can not register grpc gateway", zap.Error(err))
 		os.Exit(-1)
 	}
 
-	gatewayPort := ":" + "8080"
+	gatewayPort := s.cfg.ScrapperAddrHTTP
 	s.log.Info("gateway listening at port", zap.String("port", gatewayPort))
 
 	if err = http.ListenAndServe(gatewayPort, mux); err != nil {
@@ -67,7 +70,7 @@ func (s *Scrapper) runRest(ctx context.Context) {
 }
 
 func (s *Scrapper) runGrpc() {
-	port := ":" + "50051"
+	port := s.cfg.ScrapperAddrGRPC
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		s.log.Error("can open tcp socker", zap.Error(err))

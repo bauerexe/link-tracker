@@ -11,7 +11,10 @@ const envFile = ".env"
 
 // BotConfig - struct with all that need 'Telegram Bot Service' to work
 type BotConfig struct {
-	TokenTGBot string `config:"app_telegram_token"`
+	TokenTGBot       string `config:"app_telegram_token"`
+	ScrapperAddrGRPC string `config:"scrapper_addr_grpc"`
+	BotAddrGRPC      string `config:"bot_addr_grpc"`
+	BotAddrHTTP      string `config:"bot_addr_http"`
 }
 
 var (

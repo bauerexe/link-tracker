@@ -29,13 +29,6 @@ generate:
         paths: source_relative
         generate_unbound_methods: true
         allow_delete_body: true
-    - name: openapiv2
-      out: ./api/swagger
-      opts:
-        generate_unbound_methods: true
-        allow_merge: true
-        allow_delete_body: true
-        merge_file_name: generated_from_proto
     - name: protoc-gen-validate
       out: ./pkg
       opts:

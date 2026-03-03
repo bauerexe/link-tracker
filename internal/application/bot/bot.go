@@ -3,25 +3,43 @@ package botapp
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
+	grpcruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
+	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
 // Bot - use case
 type Bot struct {
 	botRepository BotGateway
+	server        pbv1.BotServer
 	router        *BotDispatcher
 	log           *zap.Logger
+	cfg           *config.BotConfig
 }
 
 const timeoutSec = 60
 
-func NewBot(token string, botRepository BotGateway, router *BotDispatcher, log *zap.Logger) (*Bot, error) {
+func NewBot(token string, botRepository BotGateway, server pbv1.BotServer, router *BotDispatcher, log *zap.Logger, cfg *config.BotConfig) (*Bot, error) {
 	log = log.Named("application")
 	log = log.With(zap.String("pkg", "botapp"))
+
+	if server == nil {
+		log.Warn("grps server is nil")
+	}
 
 	if token == "" {
 		log.Error("error empty telegram token")
@@ -32,10 +50,13 @@ func NewBot(token string, botRepository BotGateway, router *BotDispatcher, log *
 		return nil, errors.New("nil router")
 	}
 
-	return &Bot{botRepository: botRepository, router: router, log: log}, nil
+	return &Bot{botRepository: botRepository, server: server, router: router, log: log, cfg: cfg}, nil
 }
 
 func (b *Bot) Run(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	updates, err := b.botRepository.GetMessages(ctx, timeoutSec)
 	if err != nil {
 		b.log.Error("failed to get messages", zap.Error(err))
@@ -43,11 +64,19 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 
 	b.log.Info("bot run")
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGILL, syscall.SIGTERM)
+	defer cancel()
+
+	if b.server != nil {
+		go b.runGrpc()
+		go b.runRest(ctx)
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			b.log.Info("ctx done", zap.Error(ctx.Err()))
+			time.Sleep(time.Second * 3)
 			return ctx.Err()
 
 		case upd, ok := <-updates:
@@ -121,4 +150,46 @@ func parseCommand(text string) (cmd, args string) {
 		args = strings.Join(parts[1:], " ")
 	}
 	return cmd, args
+}
+
+func (b *Bot) runRest(ctx context.Context) {
+	mux := grpcruntime.NewServeMux(
+		grpcruntime.WithIncomingHeaderMatcher(func(k string) (string, bool) {
+			if strings.EqualFold(k, "Tg-Chat-Id") {
+				return "tg-chat-id", true
+			}
+			return grpcruntime.DefaultHeaderMatcher(k)
+		}))
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+	address := b.cfg.BotAddrGRPC
+	err := pbv1.RegisterBotHandlerFromEndpoint(ctx, mux, address, opts)
+	if err != nil {
+		b.log.Error("can not register grpc gateway", zap.Error(err))
+		os.Exit(-1)
+	}
+
+	gatewayPort := b.cfg.BotAddrHTTP
+	b.log.Info("gateway listening at port", zap.String("port", gatewayPort))
+
+	if err = http.ListenAndServe(gatewayPort, mux); err != nil {
+		b.log.Error("gateway listen error", zap.Error(err))
+	}
+}
+
+func (b *Bot) runGrpc() {
+	port := b.cfg.BotAddrGRPC
+	lis, err := net.Listen("tcp", port)
+	if err != nil {
+		b.log.Error("can open tcp socker", zap.Error(err))
+		os.Exit(-1)
+	}
+	srv := grpc.NewServer()
+	reflection.Register(srv)
+	pbv1.RegisterBotServer(srv, b.server)
+
+	b.log.Info("grpc server listening at port", zap.String("port", port))
+	if err = srv.Serve(lis); err != nil {
+		b.log.Error("grpc server listen error", zap.Error(err))
+	}
 }

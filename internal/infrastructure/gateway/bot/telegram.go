@@ -21,12 +21,18 @@ type BotGateway struct {
 
 const timeoutSec = 60
 
-var commandsToSet = []tgbotapi.BotCommand{{Command: "help", Description: "помощь"}, {Command: "start", Description: "старт"}}
-
 // New - return inited botapp.BotGateway
-func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
+func New(token string, log *zap.Logger, commandsToSet []tgbotapi.BotCommand) (botapp.BotGateway, error) {
 	log = log.Named("infrastructure.telegram")
 	log = log.With(zap.String("pkg", log.Name()))
+
+	if commandsToSet == nil {
+		commandsToSet = []tgbotapi.BotCommand{
+			{Command: "help", Description: "помощь"},
+			{Command: "start", Description: "старт"},
+		}
+	}
+
 	httpClient := &http.Client{Timeout: timeoutSec * time.Second}
 	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
 	if err != nil {

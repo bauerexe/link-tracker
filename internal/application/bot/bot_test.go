@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 )
 
 func TestNewBot(t *testing.T) {
@@ -56,7 +57,7 @@ func TestNewBot(t *testing.T) {
 			defer ctrl.Finish()
 
 			repo := NewMockBotRepository(ctrl)
-			bot, err := NewBot(tc.token, repo, tc.router, zap.NewNop())
+			bot, err := NewBot(tc.token, repo, nil, tc.router, zap.NewNop(), nil)
 
 			if tc.positive {
 				assert.NoError(t, err)
@@ -86,7 +87,8 @@ func TestBot_Run(t *testing.T) {
 		CommandHelp:  NewHelpHandler(),
 		CommandStart: NewStartHandler(),
 	})
-
+	handler := HelpHandler{}
+	ans, _ := handler.Handle(1, "")
 	testCases := []TestCase{
 		{
 			name: "positive 1 - help command is dispatched and replied",
@@ -95,7 +97,7 @@ func TestBot_Run(t *testing.T) {
 			},
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(int64(42), 7, "/start — начать\n/help — список команд").Return(nil)
+				repo.EXPECT().SendMessage(int64(42), 7, ans).Return(nil)
 			},
 			feed: func(updates chan domain.Message) {
 				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "/help"}
@@ -155,7 +157,7 @@ func TestBot_Run(t *testing.T) {
 			},
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(int64(42), 7, "/start — начать\n/help — список команд").Return(errors.New("send error"))
+				repo.EXPECT().SendMessage(int64(42), 7, ans).Return(errors.New("send error"))
 			},
 			feed: func(updates chan domain.Message) {
 				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "/help"}
@@ -172,11 +174,10 @@ func TestBot_Run(t *testing.T) {
 				return ctx
 			},
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
+				repo.EXPECT().GetMessages(gomock.Any(), 60).Times(0)
 				repo.EXPECT().SendMessage(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 			},
 			feed: func(updates chan domain.Message) {
-				close(updates)
 			},
 			positive: false,
 			expected: context.Canceled,
@@ -195,7 +196,12 @@ func TestBot_Run(t *testing.T) {
 			repo := NewMockBotRepository(ctrl)
 			tc.initMock(repo, updates)
 
-			bot, err := NewBot("TEST_TOKEN", repo, router, zap.NewNop())
+			bot, err := NewBot("TEST_TOKEN", repo, nil, router, zap.NewNop(), &config.BotConfig{
+				TokenTGBot:       "",
+				ScrapperAddrGRPC: "",
+				BotAddrGRPC:      "",
+				BotAddrHTTP:      "",
+			})
 			assert.NoError(t, err)
 			assert.NotNil(t, bot)
 

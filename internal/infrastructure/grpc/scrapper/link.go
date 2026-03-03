@@ -1,4 +1,4 @@
-package controller
+package scrapper_controller
 
 import (
 	"context"

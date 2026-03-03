@@ -96,7 +96,7 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 	http.DefaultTransport = roundTripperRewrite{base: old, target: targetURL}
 	defer func() { http.DefaultTransport = old }()
 
-	repo, err := New(token, zap.NewNop())
+	repo, err := New(token, zap.NewNop(), nil)
 	require.NoError(t, err)
 
 	r, ok := repo.(*BotGateway)

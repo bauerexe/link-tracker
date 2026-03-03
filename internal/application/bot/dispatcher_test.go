@@ -22,13 +22,15 @@ func TestBotDispatcher_Dispatch(t *testing.T) {
 		err      error
 		expected string
 	}
+	handler := HelpHandler{}
+	ans, _ := handler.Handle(1, "")
 	testCases := []TestCase{
 		{
 			name:     "positive 1",
 			command:  CommandHelp,
 			positive: true,
 			err:      nil,
-			expected: "/start — начать\n/help — список команд",
+			expected: ans,
 		},
 		{
 			name:     "positive 2",

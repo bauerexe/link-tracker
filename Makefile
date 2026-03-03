@@ -33,3 +33,6 @@ test:
 
 tg_bot_run:
 	make build && ./bin/bot
+
+scrapper_run:
+	make build && ./bin/scrapper

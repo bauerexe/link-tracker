@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 
+	"github.com/spf13/afero"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	scrapperapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	controller "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/grpc/scrapper"
 	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/inmemory"
 )
@@ -15,11 +17,22 @@ import (
 func main() {
 	fx.New(
 		fx.Provide(
+			newConfig,
 			newZap,
 			newScrapper,
 		),
 		fx.Invoke(runScrapper),
 	).Run()
+}
+
+func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
+	fs := afero.NewOsFs()
+	cfg, err := config.NewScrapperConfig(fs)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("init config")
+	return &cfg, nil
 }
 
 func newZap() (*zap.Logger, error) {
@@ -36,9 +49,9 @@ func newZap() (*zap.Logger, error) {
 	return log, nil
 }
 
-func newScrapper(log *zap.Logger) scrapperapp.Scrapper {
+func newScrapper(log *zap.Logger, cfg *config.ScrapperConfig) scrapperapp.Scrapper {
 	server := controller.New(log, repository.NewChatRepository(), repository.NewLinkRepository())
-	return scrapperapp.New(server, log)
+	return scrapperapp.New(server, log, cfg)
 }
 
 func runScrapper(lc fx.Lifecycle, scrapper scrapperapp.Scrapper, log *zap.Logger) {

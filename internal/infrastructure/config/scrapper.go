@@ -1,0 +1,30 @@
+package config
+
+import (
+	"github.com/byrnedo/typesafe-config/parse"
+	"github.com/spf13/afero"
+)
+
+// ScrapperConfig - struct with all that need 'Scrapper Bot Service' to work
+type ScrapperConfig struct {
+	ScrapperAddrGRPC string `config:"scrapper_addr_grpc"`
+	ScrapperAddrHTTP string `config:"scrapper_addr_http"`
+	BotAddrGRPC      string `config:"bot_addr_grpc"`
+}
+
+// NewScrapperConfig - init and parse config file '.env' in root, with prefix 'bot'
+func NewScrapperConfig(fs afero.Fs) (ScrapperConfig, error) {
+	file, err := afero.ReadFile(fs, envFile)
+	if err != nil {
+		return ScrapperConfig{}, ErrorReadFile
+	}
+
+	tree, err := parse.ParseBytes(file)
+	if err != nil {
+		return ScrapperConfig{}, ErrorParseFile
+	}
+
+	cfg := &ScrapperConfig{}
+	parse.Populate(cfg, tree.GetConfig(), "scrapper")
+	return *cfg, nil
+}

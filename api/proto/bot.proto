@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package bot.v1;
+
+option go_package = "pkg/api/proto/pb/v1;pbv1";
+
+import "google/api/annotations.proto";
+import "validate/validate.proto";
+
+service Bot {
+  rpc UpdateLink(UpdateLinkRequest) returns (UpdateLinkResponse){
+    option (google.api.http) = {
+      post: "/updates"
+      body: "*"
+    };
+  }
+}
+
+
+message UpdateLinkRequest {
+  int64 id = 1 [(validate.rules).int64 = {gte: 0}];
+  string url = 2 [(validate.rules).string = { uri: true, min_len: 1 }];
+  string description = 3;
+  repeated int64 tgChatIds = 4 [(validate.rules).repeated.min_items=1];
+}
+
+
+message UpdateLinkResponse {
+
+}
+
