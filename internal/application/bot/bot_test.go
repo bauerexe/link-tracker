@@ -176,8 +176,10 @@ func TestBot_Run(t *testing.T) {
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Times(0)
 				repo.EXPECT().SendMessage(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+				_ = len(updates)
 			},
 			feed: func(updates chan domain.Message) {
+				close(updates)
 			},
 			positive: false,
 			expected: context.Canceled,
