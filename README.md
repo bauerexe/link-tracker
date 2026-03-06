@@ -60,6 +60,7 @@ docker compose up --build
 в `docker-compose.yml`
 указать -
 `APP_TELEGRAM_TOKEN: "${APP_TELEGRAM_TOKEN:-}"`\
+либо стереть эту строку, при указании в `app.env`
 ### при желании
 `GITHUB_TOKEN: "${GITHUB_TOKEN:-}"`\
 `STACK_OVERFLOW_KEY: "${STACK_OVERFLOW_KEY:-}"`\
