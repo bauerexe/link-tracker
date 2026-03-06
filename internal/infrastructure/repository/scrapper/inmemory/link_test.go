@@ -11,8 +11,6 @@ import (
 )
 
 func TestLinkRepository_CreateLink(t *testing.T) {
-	t.Parallel()
-
 	type testCase struct {
 		name    string
 		chatID  int64
@@ -59,7 +57,7 @@ func TestLinkRepository_CreateLink(t *testing.T) {
 
 	rp := NewLinkRepository()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*3)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*110)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -81,13 +79,11 @@ func TestLinkRepository_CreateLink(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 50)
 	}
 }
 
 func TestLinkRepository_GetLinksByChatID(t *testing.T) {
-	t.Parallel()
-
 	type testCase struct {
 		name   string
 		chatID int64
@@ -126,7 +122,7 @@ func TestLinkRepository_GetLinksByChatID(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -148,13 +144,11 @@ func TestLinkRepository_GetLinksByChatID(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 50)
 	}
 }
 
 func TestLinkRepository_DeleteLink(t *testing.T) {
-	t.Parallel()
-
 	type testCase struct {
 		name   string
 		chatID int64
@@ -195,7 +189,7 @@ func TestLinkRepository_DeleteLink(t *testing.T) {
 	_, err := rp.CreateLink(ctxPrep, 1, "http://example.com", []string{"t1"}, []string{"f1"})
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*3)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*110)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,6 +209,6 @@ func TestLinkRepository_DeleteLink(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 50)
 	}
 }

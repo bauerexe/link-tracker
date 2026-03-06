@@ -13,6 +13,7 @@ type ChatRepository struct {
 	mu    sync.RWMutex
 }
 
+// NewChatRepository - return inmemory implementation of scrapper.ChatRepository
 func NewChatRepository() usecase.ChatRepository {
 	return &ChatRepository{chats: make(map[int64]*domain.Chat), mu: sync.RWMutex{}}
 }

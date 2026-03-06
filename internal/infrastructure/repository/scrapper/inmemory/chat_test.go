@@ -11,7 +11,6 @@ import (
 )
 
 func TestChatRepository_CreateChat(t *testing.T) {
-	t.Parallel()
 	type testCase struct {
 		name string
 		id   int64
@@ -36,7 +35,7 @@ func TestChatRepository_CreateChat(t *testing.T) {
 		},
 	}
 	rp := NewChatRepository()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -48,14 +47,12 @@ func TestChatRepository_CreateChat(t *testing.T) {
 			} else {
 				assert.Error(t, err)
 			}
-			time.Sleep(time.Millisecond * 200)
+			time.Sleep(time.Millisecond * 51)
 		})
 	}
 }
 
 func TestChatRepository_DeleteChatByID(t *testing.T) {
-	t.Parallel()
-
 	type testCase struct {
 		name string
 		id   int64
@@ -87,7 +84,7 @@ func TestChatRepository_DeleteChatByID(t *testing.T) {
 	_, err := rp.CreateChat(ctxPrep, 123)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,13 +102,11 @@ func TestChatRepository_DeleteChatByID(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 51)
 	}
 }
 
 func TestChatRepository_GetChatByID(t *testing.T) {
-	t.Parallel()
-
 	type testCase struct {
 		name string
 		id   int64
@@ -143,7 +138,7 @@ func TestChatRepository_GetChatByID(t *testing.T) {
 	_, err := rp.CreateChat(ctxPrep, 123)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -161,6 +156,6 @@ func TestChatRepository_GetChatByID(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 51)
 	}
 }

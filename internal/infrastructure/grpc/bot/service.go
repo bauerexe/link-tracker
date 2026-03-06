@@ -12,19 +12,21 @@ import (
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
+// Messenger - interface that need for send message, when server got request
 type Messenger interface {
 	SendMessage(chatID int64, replyToMessageID int, text string) error
 }
 
 type api struct {
-	log *zap.Logger
 	msg Messenger
+	log *zap.Logger
 }
 
+// New - return implementation of pbv1.BotServer
 func New(log *zap.Logger, msg Messenger) pbv1.BotServer {
 	return &api{
-		log: log.Named("bot_api"),
 		msg: msg,
+		log: log,
 	}
 }
 
@@ -33,6 +35,7 @@ func (a *api) UpdateLink(_ context.Context, req *pbv1.UpdateLinkRequest) (*pbv1.
 		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
 	if len(req.GetTgChatIds()) == 0 {
+		a.log.Debug("tgChatsIds is nil")
 		return nil, status.Error(codes.InvalidArgument, "tgChatIds must not be empty")
 	}
 
@@ -41,7 +44,7 @@ func (a *api) UpdateLink(_ context.Context, req *pbv1.UpdateLinkRequest) (*pbv1.
 	var failed []string
 	for _, chatID := range req.GetTgChatIds() {
 		if err := a.msg.SendMessage(chatID, 0, text); err != nil {
-			a.log.Error("send message failed", zap.Int64("chat_id", chatID), zap.Error(err))
+			a.log.Debug("can`t send message", zap.Int64("chatId", chatID))
 			failed = append(failed, fmt.Sprintf("%d", chatID))
 		}
 	}

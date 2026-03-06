@@ -13,6 +13,7 @@ type api struct {
 	linkRepository usecase.LinkRepository
 }
 
+// New - return implementation of pbv1.ScrapperServer
 func New(log *zap.Logger, chatRepo usecase.ChatRepository, linkRepo usecase.LinkRepository) pbv1.ScrapperServer {
 	return &api{
 		log:            log,

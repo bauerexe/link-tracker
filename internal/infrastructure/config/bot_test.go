@@ -20,7 +20,7 @@ func TestConfig(t *testing.T) {
 	}
 	initFunc := func(str string) func(testFs afero.Fs) {
 		return func(testFs afero.Fs) {
-			_ = afero.WriteFile(testFs, ".env", []byte(str), 0o644)
+			_ = afero.WriteFile(testFs, "app.env", []byte(str), 0o644)
 		}
 	}
 

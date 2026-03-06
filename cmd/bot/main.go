@@ -98,7 +98,7 @@ func newScrapperClient(conn *grpc.ClientConn) pbv1.ScrapperClient {
 
 func newRouter(ctx context.Context, client pbv1.ScrapperClient) *botapp.BotDispatcher {
 	return botapp.NewBotDispatcher(map[domain.Command]domain.Handler{
-		botapp.CommandStart:   botapp.NewStartHandler(),
+		botapp.CommandStart:   botapp.NewStartHandler(ctx, client),
 		botapp.CommandHelp:    botapp.NewHelpHandler(),
 		botapp.CommandTrack:   botapp.NewTrackHandler(ctx, client),
 		botapp.CommandUntrack: botapp.NewUntrackHandler(ctx, client),
@@ -114,6 +114,10 @@ func newBotServer(log *zap.Logger, repo botapp.BotGateway) pbv1.BotServer {
 func newBotRepo(cfg config.BotConfig,
 	log *zap.Logger,
 ) (botapp.BotGateway, error) {
+	if cfg.TelegramDisabled {
+		log.Info("telegram disabled by BOT_DISABLE_TELEGRAM; using noop gateway")
+		return botrepo.NewDummy(log.With(zap.String("layer", "infrastructure")).Named("telegram.noop")), nil
+	}
 	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"),
 		[]tgbotapi.BotCommand{
 			{Command: "help", Description: "помощь"},

@@ -40,14 +40,27 @@ type BotDispatcher struct {
 }
 
 // StartHandler - handler of message with command - CommandStart
-type StartHandler struct{}
-
-func (h *StartHandler) Handle(_ int64, _ string) (string, error) {
-	return "Привет! Я link-tracker бот. Напиши /help", nil
+type StartHandler struct {
+	ctx    context.Context
+	client pbv1.ScrapperClient
 }
 
-func NewStartHandler() domain.Handler {
-	return &StartHandler{}
+func NewStartHandler(ctx context.Context, client pbv1.ScrapperClient) domain.Handler {
+	return &StartHandler{
+		ctx:    ctx,
+		client: client,
+	}
+}
+
+func (h *StartHandler) Handle(chatID int64, _ string) (string, error) {
+	_, err := h.client.CreateChat(h.ctx, &pbv1.CreateChatRequest{
+		Id: chatID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("CreateChat failed: %w", err)
+	}
+
+	return "Привет! Я link-tracker бот. Напиши /help", nil
 }
 
 // HelpHandler - handler of message with command - CommandHelp
@@ -82,12 +95,12 @@ func NewTrackHandler(ctx context.Context, client pbv1.ScrapperClient) domain.Han
 func (h *TrackHandler) Handle(chatID int64, args string) (string, error) {
 	parts := splitArgs(args)
 	if len(parts) == 0 {
-		return "Использование: /track <ссылка> [теги...]", nil
+		return "Некорректные данные", nil
 	}
 
 	link, ok := normalizeURL(parts[0])
 	if !ok {
-		return "Некорректная ссылка. Пример: /track https://example.com [теги...]", nil
+		return "Некорректная ссылка. Пример: https://example.com ", nil
 	}
 
 	tags := []string(nil)

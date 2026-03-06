@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -24,6 +26,14 @@ func (a *api) CreateLink(ctx context.Context, req *pbv1.CreateLinkRequest) (*pbv
 		return nil, err
 	}
 
+	if _, err = a.chatRepository.GetChatByID(ctx, chatID); err != nil {
+		if errors.Is(err, usecase.ErrChatNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		a.log.Error("get chat failed", zap.Error(err))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
 	createdLink, err := a.linkRepository.CreateLink(ctx, chatID, req.GetLink(), req.GetTags(), req.GetFilters())
 	if err != nil {
 		if errors.Is(err, usecase.ErrLinkAlreadyTracked) {
@@ -32,9 +42,12 @@ func (a *api) CreateLink(ctx context.Context, req *pbv1.CreateLinkRequest) (*pbv
 		a.log.Error("create link failed", zap.Error(err))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
-
+	_ = a.linkRepository.SetURLState(ctx, createdLink.URL, domain.URLState{
+		LastCheckedAt: time.Now(),
+		LastUpdatedAt: time.Now(),
+	})
 	return &pbv1.LinkResponse{
-		Id:      createdLink.ID,
+		Id:      int32(createdLink.ID),
 		Url:     createdLink.URL,
 		Tags:    createdLink.Tags,
 		Filters: createdLink.Filters,
@@ -49,10 +62,20 @@ func (a *api) GetLinks(ctx context.Context, req *pbv1.GetLinksRequest) (*pbv1.Li
 	if err != nil {
 		return nil, err
 	}
+	if _, err = a.chatRepository.GetChatByID(ctx, chatID); err != nil {
+		if errors.Is(err, usecase.ErrChatNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		a.log.Error("get chat failed", zap.Error(err))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
 	gotLinks, err := a.linkRepository.GetLinksByChatID(ctx, chatID)
 	if err != nil {
 		if errors.Is(err, usecase.ErrChatNotFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
+			return &pbv1.ListLinksResponse{
+				Links: []*pbv1.LinkResponse{},
+				Size:  0,
+			}, nil
 		}
 		a.log.Error("get links failed", zap.Error(err))
 		return nil, status.Error(codes.Internal, "internal error")
@@ -60,7 +83,7 @@ func (a *api) GetLinks(ctx context.Context, req *pbv1.GetLinksRequest) (*pbv1.Li
 	links := make([]*pbv1.LinkResponse, len(gotLinks))
 	for i, link := range gotLinks {
 		links[i] = &pbv1.LinkResponse{
-			Id:      link.ID,
+			Id:      int32(link.ID),
 			Url:     link.URL,
 			Tags:    link.Tags,
 			Filters: link.Filters,
@@ -82,6 +105,14 @@ func (a *api) DeleteLink(ctx context.Context, req *pbv1.DeleteLinkRequest) (*pbv
 		return nil, err
 	}
 
+	if _, err = a.chatRepository.GetChatByID(ctx, chatID); err != nil {
+		if errors.Is(err, usecase.ErrChatNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		a.log.Error("get chat failed", zap.Error(err))
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
 	deletedLink, err := a.linkRepository.DeleteLink(ctx, chatID, req.GetLink())
 	if err != nil {
 		if errors.Is(err, usecase.ErrChatNotFound) || errors.Is(err, usecase.ErrLinkNotFound) {
@@ -92,7 +123,7 @@ func (a *api) DeleteLink(ctx context.Context, req *pbv1.DeleteLinkRequest) (*pbv
 	}
 
 	return &pbv1.LinkResponse{
-		Id:      deletedLink.ID,
+		Id:      int32(deletedLink.ID),
 		Url:     deletedLink.URL,
 		Tags:    deletedLink.Tags,
 		Filters: deletedLink.Filters,

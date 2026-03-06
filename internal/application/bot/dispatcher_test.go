@@ -9,11 +9,20 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
+type stubHandler struct {
+	reply string
+	err   error
+}
+
+func (h stubHandler) Handle(_ int64, _ string) (string, error) {
+	return h.reply, h.err
+}
+
 func TestBotDispatcher_Dispatch(t *testing.T) {
 	t.Parallel()
 	dp := NewBotDispatcher(map[domain.Command]domain.Handler{
 		CommandHelp:  NewHelpHandler(),
-		CommandStart: NewStartHandler(),
+		CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
 	})
 	type TestCase struct {
 		name     string

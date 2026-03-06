@@ -18,8 +18,26 @@ func normalizeURL(raw string) (string, bool) {
 	if raw == "" {
 		return "", false
 	}
+
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil {
+		return "", false
+	}
+
+	if u.Scheme == "" {
+		u, err = url.Parse("https://" + raw)
+		if err != nil {
+			return "", false
+		}
+	}
+
+	if !u.IsAbs() || u.Host == "" {
+		return "", false
+	}
+
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
 		return "", false
 	}
 

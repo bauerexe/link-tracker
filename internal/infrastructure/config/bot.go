@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-const envFile = ".env"
+const envFile = "app.env"
 
 // BotConfig - struct with all that need 'Telegram Bot Service' to work
 type BotConfig struct {
@@ -15,6 +15,7 @@ type BotConfig struct {
 	ScrapperAddrGRPC string `config:"scrapper_addr_grpc"`
 	BotAddrGRPC      string `config:"bot_addr_grpc"`
 	BotAddrHTTP      string `config:"bot_addr_http"`
+	TelegramDisabled bool   `config:"bot_disable_telegram"`
 }
 
 var (
@@ -22,7 +23,7 @@ var (
 	ErrorParseFile = errors.New("error while parse file")
 )
 
-// NewBotConfig - init and parse config file '.env' in root, with prefix 'bot'
+// NewBotConfig - init and parse config file 'app.env' in root, with prefix 'bot'
 func NewBotConfig(fs afero.Fs) (BotConfig, error) {
 	var tree *parse.Tree
 	var err error
