@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -21,7 +22,6 @@ import (
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -129,7 +129,8 @@ func TestBot_Run(t *testing.T) {
 				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "   \n\t"}
 				close(updates)
 			},
-			positive: true,
+			positive: false,
+			expected: ErrEmptyText,
 		},
 		{
 			name: "positive 3 - unknown command returns fallback reply and is sent",

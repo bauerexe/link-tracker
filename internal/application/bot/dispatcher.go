@@ -37,7 +37,7 @@ type BotDispatcher struct {
 func (r *BotDispatcher) Dispatch(message domain.Message, cmd domain.Command, args string) (string, error) {
 	h, ok := r.handlers[cmd]
 	if !ok {
-		return fmt.Sprintf("Не знаю команду %s. Напиши /help", cmd), nil
+		return fmt.Sprintf("Не знаю команду %s. Напиши /help", cmd), ErrorUnknownCommand
 	}
 	return h.Handle(message.ChatID, args)
 }

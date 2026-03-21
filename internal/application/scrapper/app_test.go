@@ -5,17 +5,18 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	grpcruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -351,39 +352,14 @@ func TestScheduler_Recipients_OnlySubscribersGetUpdate(t *testing.T) {
 }
 
 func stringsJoinInt64(xs []int64) string {
-	if len(xs) == 0 {
-		return ""
-	}
 	var b strings.Builder
 	for i, x := range xs {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(int64ToString(x))
+		b.WriteString(strconv.FormatInt(x, 10))
 	}
 	return b.String()
-}
-
-func int64ToString(x int64) string {
-	if x == 0 {
-		return "0"
-	}
-	neg := x < 0
-	if neg {
-		x = -x
-	}
-	var buf [32]byte
-	i := len(buf)
-	for x > 0 {
-		i--
-		buf[i] = byte('0' + x%10)
-		x /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
 
 func TestScheduler_CheckerErrors_TableDriven(t *testing.T) {

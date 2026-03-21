@@ -12,6 +12,7 @@ import (
 	"time"
 
 	grpcruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,7 +20,6 @@ import (
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -41,6 +41,8 @@ var (
 	RegisterBotGateway = pbv1.RegisterBotHandlerFromEndpoint
 	BotNewGrpcServer   = grpc.NewServer
 )
+
+var ErrEmptyText = errors.New("error empty text")
 
 const timeoutSec = 60
 
@@ -118,7 +120,7 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 
 	text := strings.TrimSpace(upd.Text)
 	if text == "" {
-		return true, ErrorUnknownCommand
+		return true, ErrEmptyText
 	}
 
 	handled, err := b.handleTrackDialog(logger, upd, text)
@@ -141,12 +143,16 @@ func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string
 
 	replyText, err := b.router.Dispatch(upd, domain.Command(cmd), args)
 	if err != nil {
-		logger.Error(
-			"error invalid command",
-			zap.String("command", cmd),
-			zap.Error(err),
-		)
-		return err
+		if errors.Is(err, ErrorUnknownCommand) {
+			replyText = "Не знаю команду " + cmd + ". Напиши /help"
+		} else {
+			logger.Error(
+				"error invalid command",
+				zap.String("command", cmd),
+				zap.Error(err),
+			)
+			return err
+		}
 	}
 
 	logger.Info("bot dispatched message to reply", zap.String("reply", replyText))
