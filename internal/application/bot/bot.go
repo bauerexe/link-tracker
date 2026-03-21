@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
@@ -304,7 +305,7 @@ func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message, text st
 		reply := "Ссылка пустая. Пришли ссылку или /cancel."
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
 	}
-	if _, ok := normalizeURL(url); !ok {
+	if _, ok := handlers.NormalizeURL(url); !ok {
 		reply := "Некорректная ссылка. Пример: https://example.com"
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
 	}

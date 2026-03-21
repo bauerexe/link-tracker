@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
@@ -21,7 +22,7 @@ func (h stubHandler) Handle(_ int64, _ string) (string, error) {
 func TestBotDispatcher_Dispatch(t *testing.T) {
 	t.Parallel()
 	dp := NewBotDispatcher(map[domain.Command]domain.Handler{
-		CommandHelp:  NewHelpHandler(),
+		CommandHelp:  handlers.NewHelpHandler(),
 		CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
 	})
 	type TestCase struct {
@@ -31,7 +32,7 @@ func TestBotDispatcher_Dispatch(t *testing.T) {
 		err      error
 		expected string
 	}
-	handler := HelpHandler{}
+	handler := handlers.HelpHandler{}
 	ans, _ := handler.Handle(1, "")
 	testCases := []TestCase{
 		{

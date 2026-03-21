@@ -1,11 +1,11 @@
-package botapp
+package handlers
 
 import (
 	"net/url"
 	"strings"
 )
 
-func splitArgs(args string) []string {
+func SplitArgs(args string) []string {
 	args = strings.TrimSpace(args)
 	if args == "" {
 		return nil
@@ -13,7 +13,7 @@ func splitArgs(args string) []string {
 	return strings.Fields(args)
 }
 
-func normalizeURL(raw string) (string, bool) {
+func NormalizeURL(raw string) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", false
@@ -44,7 +44,7 @@ func normalizeURL(raw string) (string, bool) {
 	return u.String(), true
 }
 
-func hasTag(tags []string, tag string) bool {
+func HasTag(tags []string, tag string) bool {
 	for _, t := range tags {
 		if t == tag {
 			return true

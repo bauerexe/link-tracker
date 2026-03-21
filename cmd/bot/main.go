@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	botrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/bot"
@@ -98,11 +99,11 @@ func newScrapperClient(conn *grpc.ClientConn) pbv1.ScrapperClient {
 
 func newRouter(ctx context.Context, client pbv1.ScrapperClient) *botapp.BotDispatcher {
 	return botapp.NewBotDispatcher(map[domain.Command]domain.Handler{
-		botapp.CommandStart:   botapp.NewStartHandler(ctx, client),
-		botapp.CommandHelp:    botapp.NewHelpHandler(),
-		botapp.CommandTrack:   botapp.NewTrackHandler(ctx, client),
-		botapp.CommandUntrack: botapp.NewUntrackHandler(ctx, client),
-		botapp.CommandList:    botapp.NewListHandler(ctx, client),
+		botapp.CommandStart:   handlers.NewStartHandler(ctx, client),
+		botapp.CommandHelp:    handlers.NewHelpHandler(),
+		botapp.CommandTrack:   handlers.NewTrackHandler(ctx, client),
+		botapp.CommandUntrack: handlers.NewUntrackHandler(ctx, client),
+		botapp.CommandList:    handlers.NewListHandler(ctx, client),
 	},
 	)
 }

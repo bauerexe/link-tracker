@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
@@ -94,10 +95,10 @@ func TestBot_Run(t *testing.T) {
 	}
 
 	router := NewBotDispatcher(map[domain.Command]domain.Handler{
-		CommandHelp:  NewHelpHandler(),
+		CommandHelp:  handlers.NewHelpHandler(),
 		CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
 	})
-	handler := HelpHandler{}
+	handler := handlers.HelpHandler{}
 	ans, _ := handler.Handle(1, "")
 	testCases := []TestCase{
 		{
@@ -474,9 +475,9 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 			defer cleanup()
 
 			router := NewBotDispatcher(map[domain.Command]domain.Handler{
-				CommandTrack: NewTrackHandler(ctx, client),
-				CommandList:  NewListHandler(ctx, client),
-				CommandHelp:  NewHelpHandler(),
+				CommandTrack: handlers.NewTrackHandler(ctx, client),
+				CommandList:  handlers.NewListHandler(ctx, client),
+				CommandHelp:  handlers.NewHelpHandler(),
 				CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
 			})
 
