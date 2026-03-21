@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,20 +32,28 @@ type Bot struct {
 	log           *zap.Logger
 	cfg           *config.BotConfig
 	fsm           *fsmStore
+
+	mu         sync.Mutex
+	wg         sync.WaitGroup
+	grpcServer *grpc.Server
 }
 
 var (
-	BotHTTPListenAndServe = http.ListenAndServe
-	BotNetListen          = net.Listen
-	BotExitFn             = os.Exit
-
+	HTTPListenAndServe = http.ListenAndServe
+	NetListen          = net.Listen
+	ExitFn             = os.Exit
+	HttpServe          = http.Serve
 	RegisterBotGateway = pbv1.RegisterBotHandlerFromEndpoint
-	BotNewGrpcServer   = grpc.NewServer
+	NewGrpcServer      = grpc.NewServer
 )
 
 var ErrEmptyText = errors.New("error empty text")
 
-const timeoutSec = 60
+const (
+	timeoutSec          = 60
+	shutdownTimeout     = 5 * time.Second
+	gracefulStopTimeout = 5 * time.Second
+)
 
 func NewBot(token string, botRepository BotGateway, server pbv1.BotServer, router *BotDispatcher, log *zap.Logger, cfg *config.BotConfig) (*Bot, error) {
 	log = log.Named("application")
@@ -77,22 +86,26 @@ func (b *Bot) Run(ctx context.Context) error {
 		return err
 	}
 
+	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	b.log.Info("bot run")
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGILL, syscall.SIGTERM)
-	defer cancel()
 
 	if b.server != nil {
-		go b.runGrpc()
-		go b.runRest(ctx)
+		b.wg.Go(func() { b.runGrpc() })
+		b.wg.Go(func() { b.runRest(sigCtx) })
 	}
 
 	for {
 		select {
-		case <-ctx.Done():
-			b.log.Info("ctx done", zap.Error(ctx.Err()))
-			time.Sleep(time.Second * 3)
-			return ctx.Err()
-
+		case <-sigCtx.Done():
+			stop()
+			b.log.Info("shutdown signal received", zap.Error(sigCtx.Err()))
+			b.shutdown()
+			if err = b.waitWithTimeout(gracefulStopTimeout); err != nil {
+				b.log.Warn("bot shutdown finished with timeout", zap.Error(err))
+			}
+			return sigCtx.Err()
 		case upd, ok := <-updates:
 			cont, err := b.handleIncomingMessage(upd, ok)
 			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
@@ -185,36 +198,50 @@ func (b *Bot) runRest(ctx context.Context) {
 				return "tg-chat-id", true
 			}
 			return grpcruntime.DefaultHeaderMatcher(k)
-		}))
+		}),
+	)
+
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
 	address := b.cfg.BotAddrGRPC
-	err := RegisterBotGateway(ctx, mux, address, opts)
-	if err != nil {
+	if err := RegisterBotGateway(ctx, mux, address, opts); err != nil {
 		b.log.Error("can not register grpc gateway", zap.Error(err))
-		BotExitFn(-1)
+		return
 	}
 
-	gatewayPort := b.cfg.BotAddrHTTP
-	b.log.Info("gateway listening at port", zap.String("port", gatewayPort))
-
-	if err = BotHTTPListenAndServe(gatewayPort, mux); err != nil {
+	ln, err := NetListen("tcp", b.cfg.BotAddrHTTP)
+	if err != nil {
 		b.log.Error("gateway listen error", zap.Error(err))
+		ExitFn(-1)
+		return
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	b.log.Info("gateway listening at port", zap.String("port", b.cfg.BotAddrHTTP))
+
+	if err = HttpServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
+		b.log.Error("gateway serve error", zap.Error(err))
 	}
 }
 
 func (b *Bot) runGrpc() {
 	port := b.cfg.BotAddrGRPC
-	lis, err := BotNetListen("tcp", port)
+	lis, err := NetListen("tcp", port)
 	if err != nil {
 		b.log.Error("can open tcp socker", zap.Error(err))
-		BotExitFn(-1)
+		ExitFn(-1)
 	}
-	srv := BotNewGrpcServer()
+	srv := NewGrpcServer()
+	b.grpcServer = srv
 	reflection.Register(srv)
 	pbv1.RegisterBotServer(srv, b.server)
 
 	b.log.Info("grpc server listening at port", zap.String("port", port))
+
 	if err = srv.Serve(lis); err != nil {
 		b.log.Error("grpc server listen error", zap.Error(err))
 	}
@@ -373,4 +400,44 @@ func parseTagsCSV(s string) []string {
 		return nil
 	}
 	return out
+}
+
+func (b *Bot) waitWithTimeout(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return context.DeadlineExceeded
+	}
+}
+
+func (b *Bot) shutdown() {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	b.mu.Lock()
+	grpcServer := b.grpcServer
+	b.mu.Unlock()
+
+	if grpcServer != nil {
+		done := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			b.log.Warn("grpc graceful stop timeout, forcing stop", zap.Error(shutdownCtx.Err()))
+			grpcServer.Stop()
+			<-done
+		}
+	}
 }

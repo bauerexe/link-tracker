@@ -1,25 +1,37 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
+
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// HelpHandler - handler of message with command - CommandHelp
-type HelpHandler struct{}
-
-func (h *HelpHandler) Handle(_ int64, _ string) (string, error) {
-	return "/start — начать\n" +
-		"/help — список команд\n" +
-		"/track — начать отслеживание ссылки. " +
-		"Опционально пользователь может указать один или несколько тегов," +
-		"привязанных к ссылке.\n" +
-		"/untrack — прекратить отслеживание ссылки.\n" +
-		"/list — вывести список всех ссылок," +
-		"отслеживаемых пользователем." +
-		"Опционально вторым параметром можно указать тег" +
-		" — в этом случае список ссылок должен быть отфильтрован по указанному тегу.", nil
+// StartHandler - handler of message with command - CommandStart
+type StartHandler struct {
+	ctx    context.Context
+	client pbv1.ScrapperClient
 }
 
-func NewHelpHandler() domain.Handler {
-	return &HelpHandler{}
+func NewStartHandler(ctx context.Context, client pbv1.ScrapperClient) domain.Handler {
+	return &StartHandler{
+		ctx:    ctx,
+		client: client,
+	}
+}
+
+func (h *StartHandler) Handle(chatID int64, _ string) (string, error) {
+	_, err := h.client.CreateChat(h.ctx, &pbv1.CreateChatRequest{
+		Id: chatID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.AlreadyExists {
+			return "Ты уже зарегистрирован. Напиши /help", nil
+		}
+		return "", fmt.Errorf("CreateChat failed: %w", err)
+	}
+	return "Привет! Я link-tracker бот. Напиши /help", nil
 }

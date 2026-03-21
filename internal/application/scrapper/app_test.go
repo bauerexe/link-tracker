@@ -31,31 +31,12 @@ type exitPanic struct {
 /*
 Тесты, которые просились в тз. Не знаю как их выделить иначе кроме комента этого
 */
-func TestScrapper_runRest_registerError_exits(t *testing.T) {
+func TestScrapper_runRest_registerError_returns(t *testing.T) {
 	oldRegister := RegisterScrapperGateway
-	oldExit := ExitFn
-	oldListen := HttpListenAndServe
-
-	defer func() {
-		RegisterScrapperGateway = oldRegister
-		ExitFn = oldExit
-		HttpListenAndServe = oldListen
-	}()
-
-	exitCalled := false
-	exitCode := 0
-	ExitFn = func(code int) {
-		exitCalled = true
-		exitCode = code
-		panic(exitPanic{code: code})
-	}
+	defer func() { RegisterScrapperGateway = oldRegister }()
 
 	RegisterScrapperGateway = func(_ context.Context, _ *grpcruntime.ServeMux, _ string, _ []grpc.DialOption) error {
 		return errors.New("boom")
-	}
-
-	HttpListenAndServe = func(_ string, _ http.Handler) error {
-		return nil
 	}
 
 	s := New(&dummyScrapperServer{}, zap.NewNop(), &config.ScrapperConfig{
@@ -64,30 +45,31 @@ func TestScrapper_runRest_registerError_exits(t *testing.T) {
 	})
 
 	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatalf("expected exit panic")
-		}
-		if _, ok := r.(exitPanic); !ok {
+		if r := recover(); r != nil {
 			t.Fatalf("unexpected panic: %v", r)
-		}
-		if !exitCalled || exitCode != -1 {
-			t.Fatalf("expected exit(-1), got called=%v code=%d", exitCalled, exitCode)
 		}
 	}()
 
 	s.runRest(context.Background())
 }
 
+type fakeListener struct{}
+
+func (fakeListener) Accept() (net.Conn, error) { return nil, errors.New("closed") }
+func (fakeListener) Close() error              { return nil }
+func (fakeListener) Addr() net.Addr            { return &net.TCPAddr{} }
+
 func TestScrapper_runRest_listenCalled(t *testing.T) {
 	oldRegister := RegisterScrapperGateway
 	oldExit := ExitFn
-	oldListen := HttpListenAndServe
+	oldNetListen := NetListen
+	oldHTTPServe := HttpServe
 
 	defer func() {
 		RegisterScrapperGateway = oldRegister
 		ExitFn = oldExit
-		HttpListenAndServe = oldListen
+		NetListen = oldNetListen
+		HttpServe = oldHTTPServe
 	}()
 
 	ExitFn = func(_ int) {}
@@ -96,12 +78,26 @@ func TestScrapper_runRest_listenCalled(t *testing.T) {
 		return nil
 	}
 
-	called := false
+	listenCalled := false
+	serveCalled := false
+	gotNetwork := ""
 	gotAddr := ""
-	HttpListenAndServe = func(addr string, _ http.Handler) error {
-		called = true
-		gotAddr = addr
-		return errors.New("listen error")
+
+	ln := fakeListener{}
+
+	NetListen = func(network, address string) (net.Listener, error) {
+		listenCalled = true
+		gotNetwork = network
+		gotAddr = address
+		return ln, nil
+	}
+
+	HttpServe = func(gotLn net.Listener, _ http.Handler) error {
+		serveCalled = true
+		if gotLn != ln {
+			t.Fatalf("unexpected listener passed to HttpServe")
+		}
+		return errors.New("serve error")
 	}
 
 	s := New(&dummyScrapperServer{}, zap.NewNop(), &config.ScrapperConfig{
@@ -111,8 +107,14 @@ func TestScrapper_runRest_listenCalled(t *testing.T) {
 
 	s.runRest(context.Background())
 
-	if !called || gotAddr != "localhost:8080" {
-		t.Fatalf("expected listen called with localhost:8080, got called=%v addr=%q", called, gotAddr)
+	if !listenCalled {
+		t.Fatalf("expected NetListen to be called")
+	}
+	if gotNetwork != "tcp" || gotAddr != "localhost:8080" {
+		t.Fatalf("expected NetListen called with tcp localhost:8080, got network=%q addr=%q", gotNetwork, gotAddr)
+	}
+	if !serveCalled {
+		t.Fatalf("expected HttpServe to be called")
 	}
 }
 

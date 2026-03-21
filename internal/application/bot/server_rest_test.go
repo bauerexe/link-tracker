@@ -3,6 +3,7 @@ package botapp
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"testing"
 
@@ -18,30 +19,20 @@ type dummyBotServer struct {
 	pbv1.UnimplementedBotServer
 }
 
-func TestBot_runRest_registerError_exits(t *testing.T) {
-	oldRegister := RegisterBotGateway
-	oldExit := BotExitFn
-	oldListen := BotHTTPListenAndServe
+type fakeListener struct{}
 
+func (fakeListener) Accept() (net.Conn, error) { return nil, errors.New("closed") }
+func (fakeListener) Close() error              { return nil }
+func (fakeListener) Addr() net.Addr            { return &net.TCPAddr{} }
+
+func TestBot_runRest_registerError_returns(t *testing.T) {
+	oldRegister := RegisterBotGateway
 	defer func() {
 		RegisterBotGateway = oldRegister
-		BotExitFn = oldExit
-		BotHTTPListenAndServe = oldListen
 	}()
-
-	exitCalled := false
-	exitCode := 0
-	BotExitFn = func(code int) {
-		exitCalled = true
-		exitCode = code
-	}
 
 	RegisterBotGateway = func(_ context.Context, _ *grpcruntime.ServeMux, _ string, _ []grpc.DialOption) error {
 		return errors.New("boom")
-	}
-
-	BotHTTPListenAndServe = func(_ string, _ http.Handler) error {
-		return nil
 	}
 
 	b := &Bot{
@@ -53,36 +44,54 @@ func TestBot_runRest_registerError_exits(t *testing.T) {
 		},
 	}
 
-	b.runRest(context.Background())
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic: %v", r)
+		}
+	}()
 
-	if !exitCalled || exitCode != -1 {
-		t.Fatalf("expected exit(-1), got called=%v code=%d", exitCalled, exitCode)
-	}
+	b.runRest(context.Background())
 }
 
 func TestBot_runRest_listenCalled(t *testing.T) {
 	oldRegister := RegisterBotGateway
-	oldExit := BotExitFn
-	oldListen := BotHTTPListenAndServe
+	oldExit := ExitFn
+	oldNetListen := NetListen
+	oldHTTPServe := HttpServe
 
 	defer func() {
 		RegisterBotGateway = oldRegister
-		BotExitFn = oldExit
-		BotHTTPListenAndServe = oldListen
+		ExitFn = oldExit
+		NetListen = oldNetListen
+		HttpServe = oldHTTPServe
 	}()
 
-	BotExitFn = func(_ int) {}
+	ExitFn = func(_ int) {}
 
 	RegisterBotGateway = func(_ context.Context, _ *grpcruntime.ServeMux, _ string, _ []grpc.DialOption) error {
-		return errors.New("boom")
+		return nil
 	}
 
-	called := false
+	listenCalled := false
+	serveCalled := false
+	gotNetwork := ""
 	gotAddr := ""
-	BotHTTPListenAndServe = func(addr string, _ http.Handler) error {
-		called = true
-		gotAddr = addr
-		return errors.New("listen error")
+
+	ln := fakeListener{}
+
+	NetListen = func(network, address string) (net.Listener, error) {
+		listenCalled = true
+		gotNetwork = network
+		gotAddr = address
+		return ln, nil
+	}
+
+	HttpServe = func(gotLn net.Listener, _ http.Handler) error {
+		serveCalled = true
+		if gotLn != ln {
+			t.Fatalf("unexpected listener passed to HttpServe")
+		}
+		return errors.New("serve error")
 	}
 
 	b := &Bot{
@@ -96,7 +105,13 @@ func TestBot_runRest_listenCalled(t *testing.T) {
 
 	b.runRest(context.Background())
 
-	if !called || gotAddr != "localhost:8082" {
-		t.Fatalf("expected listen called with localhost:8082, got called=%v addr=%q", called, gotAddr)
+	if !listenCalled {
+		t.Fatalf("expected NetListen to be called")
+	}
+	if gotNetwork != "tcp" || gotAddr != "localhost:8082" {
+		t.Fatalf("expected NetListen called with tcp localhost:8082, got network=%q addr=%q", gotNetwork, gotAddr)
+	}
+	if !serveCalled {
+		t.Fatalf("expected HttpServe to be called")
 	}
 }

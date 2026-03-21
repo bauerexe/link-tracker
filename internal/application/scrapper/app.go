@@ -2,11 +2,13 @@ package scrapper_app
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,15 +27,25 @@ type Scrapper struct {
 	server pbv1.ScrapperServer
 	log    *zap.Logger
 	cfg    *config.ScrapperConfig
+
+	mu         sync.Mutex
+	wg         sync.WaitGroup
+	grpcServer *grpc.Server
 }
 
 var (
 	HttpListenAndServe = http.ListenAndServe
 	NetListen          = net.Listen
 	ExitFn             = os.Exit
+	HttpServe          = http.Serve
 
 	RegisterScrapperGateway = pbv1.RegisterScrapperHandlerFromEndpoint
 	NewGrpcServer           = grpc.NewServer
+)
+
+const (
+	shutdownTimeout     = 5 * time.Second
+	gracefulStopTimeout = 5 * time.Second
 )
 
 func New(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) Scrapper {
@@ -46,13 +58,19 @@ func New(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig
 
 // Run - run servers for handle requests from tg bot
 func (s *Scrapper) Run(ctx context.Context) {
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGILL, syscall.SIGTERM)
-	defer cancel()
+	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	go s.runGrpc()
-	go s.runRest(ctx)
-	<-ctx.Done()
-	time.Sleep(time.Second * 3)
+	s.wg.Go(func() { s.runGrpc() })
+	s.wg.Go(func() { s.runRest(sigCtx) })
+
+	<-sigCtx.Done()
+	stop()
+	s.log.Info("shutdown signal received", zap.Error(sigCtx.Err()))
+	s.shutdown()
+	if err := s.waitWithTimeout(gracefulStopTimeout); err != nil {
+		s.log.Warn("scrapper shutdown finished with timeout", zap.Error(err))
+	}
 }
 
 func (s *Scrapper) runRest(ctx context.Context) {
@@ -62,21 +80,33 @@ func (s *Scrapper) runRest(ctx context.Context) {
 				return "tg-chat-id", true
 			}
 			return grpcruntime.DefaultHeaderMatcher(k)
-		}))
+		}),
+	)
+
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
 	address := s.cfg.ScrapperAddrGRPC
-	err := RegisterScrapperGateway(ctx, mux, address, opts)
-	if err != nil {
+	if err := RegisterScrapperGateway(ctx, mux, address, opts); err != nil {
 		s.log.Error("can not register grpc gateway", zap.Error(err))
-		ExitFn(-1)
+		return
 	}
 
-	gatewayPort := s.cfg.ScrapperAddrHTTP
-	s.log.Info("gateway listening at port", zap.String("port", gatewayPort))
-
-	if err = HttpListenAndServe(gatewayPort, mux); err != nil {
+	ln, err := NetListen("tcp", s.cfg.ScrapperAddrHTTP)
+	if err != nil {
 		s.log.Error("gateway listen error", zap.Error(err))
+		ExitFn(-1)
+		return
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	s.log.Info("gateway listening at port", zap.String("port", s.cfg.ScrapperAddrHTTP))
+
+	if err = HttpServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
+		s.log.Error("gateway serve error", zap.Error(err))
 	}
 }
 
@@ -88,11 +118,53 @@ func (s *Scrapper) runGrpc() {
 		ExitFn(-1)
 	}
 	srv := NewGrpcServer()
+	s.grpcServer = srv
+
 	reflection.Register(srv)
 	pbv1.RegisterScrapperServer(srv, s.server)
 
 	s.log.Info("grpc server listening at port", zap.String("port", port))
 	if err = srv.Serve(lis); err != nil {
 		s.log.Error("grpc server listen error", zap.Error(err))
+	}
+}
+
+func (s *Scrapper) waitWithTimeout(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return context.DeadlineExceeded
+	}
+}
+
+func (s *Scrapper) shutdown() {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	s.mu.Lock()
+	grpcServer := s.grpcServer
+	s.mu.Unlock()
+
+	if grpcServer != nil {
+		done := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			s.log.Warn("grpc graceful stop timeout, forcing stop", zap.Error(shutdownCtx.Err()))
+			grpcServer.Stop()
+			<-done
+		}
 	}
 }

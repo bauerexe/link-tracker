@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"time"
 
@@ -96,8 +97,33 @@ func newScrapperApp(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.Scr
 	return scrapperapp.New(server, log, cfg)
 }
 
-func newHTTPClient() *http.Client {
-	return &http.Client{Timeout: 10 * time.Second}
+func newHTTPClient(lc fx.Lifecycle, log *zap.Logger) *http.Client {
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+	}
+
+	lc.Append(fx.Hook{
+		OnStop: func(_ context.Context) error {
+			log.Info("closing idle http connections")
+			transport.CloseIdleConnections()
+			return nil
+		},
+	})
+
+	return client
 }
 
 func newCheckers(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.Logger) []scrapperapp.Checker {
