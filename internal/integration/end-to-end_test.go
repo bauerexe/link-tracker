@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -37,6 +38,9 @@ type e2eEnv struct {
 }
 
 func TestEndToEnd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("testcontainers rootless Docker is not supported on Windows")
+	}
 	env := mustStartE2EEnv(t)
 	defer env.Close(t)
 
