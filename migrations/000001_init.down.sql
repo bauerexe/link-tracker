@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS chat_link_filters;
+DROP TABLE IF EXISTS chat_link_tags;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS chat_links;
+DROP TABLE IF EXISTS links;
+DROP TABLE IF EXISTS chats;

@@ -1,6 +1,22 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:latest
+    container_name: link-tracker-postgres
+    environment:
+      POSTGRES_DB: link_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d link_tracker" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
   scrapper:
     build:
       context: .
@@ -37,3 +53,5 @@ services:
     ports:
       - "8082:8082"
       - "50052:50052"
+volumes:
+  postgres_data:
