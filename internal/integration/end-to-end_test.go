@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -37,10 +38,10 @@ type e2eEnv struct {
 }
 
 func TestEndToEnd(t *testing.T) {
-	env, ok := tryStartE2EEnv(t)
-	if !ok {
-		return
+	if runtime.GOOS == "windows" {
+		t.Skip("testcontainers rootless Docker is not supported on Windows")
 	}
+	env := mustStartE2EEnv(t)
 	defer env.Close(t)
 
 	t.Run("Test1_Bot_CorrectUpdate_2000", func(t *testing.T) {
@@ -538,154 +539,4 @@ func dumpContainerLogs(ctx context.Context, t *testing.T, c testcontainers.Conta
 	defer r.Close()
 	b, _ := io.ReadAll(r)
 	t.Logf("=== %s logs ===\n%s\n=== end %s logs ===", name, string(b), name)
-}
-
-func tryStartE2EEnv(t *testing.T) (*e2eEnv, bool) {
-	t.Helper()
-
-	root := mustFindProjectRoot(t)
-	ctx := context.Background()
-
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-
-	network, err := tcnetwork.New(ctx)
-	if err != nil {
-		t.Skipf("skip e2e: cannot create docker network: %v", err)
-		return nil, false
-	}
-	networkName := network.Name
-
-	envPath := filepath.Join(root, "app.env")
-	commonFiles := []testcontainers.ContainerFile{
-		{
-			HostFilePath:      envPath,
-			ContainerFilePath: "/app/app.env",
-			FileMode:          0o644,
-		},
-	}
-
-	scrReq := testcontainers.ContainerRequest{
-		FromDockerfile: testcontainers.FromDockerfile{
-			Context:    root,
-			Dockerfile: "Dockerfile.scrapper",
-		},
-		Files:        commonFiles,
-		ExposedPorts: []string{"8080/tcp", "50051/tcp"},
-		Networks:     []string{networkName},
-		NetworkAliases: map[string][]string{
-			networkName: {"scrapper"},
-		},
-		ConfigModifier: func(cfg *dockercontainer.Config) {
-			cfg.WorkingDir = "/app"
-		},
-		WaitingFor: wait.ForLog("gateway listening at port").WithStartupTimeout(10 * time.Second),
-		Env: map[string]string{
-			"SCRAPPER_ADDR_HTTP":     "0.0.0.0:8080",
-			"SCRAPPER_ADDR_GRPC":     "0.0.0.0:50051",
-			"BOT_ADDR_GRPC":          "bot:50052",
-			"MINUTES_INTERVAL_CHECK": "1",
-			"GITHUB_TOKEN":           "",
-			"STACK_OVERFLOW_KEY":     "",
-		},
-	}
-
-	scr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: scrReq,
-		Started:          true,
-	})
-	if err != nil {
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot build/start scrapper container: %v", err)
-		return nil, false
-	}
-
-	botReq := testcontainers.ContainerRequest{
-		FromDockerfile: testcontainers.FromDockerfile{
-			Context:    root,
-			Dockerfile: "Dockerfile.bot",
-		},
-		Files:        commonFiles,
-		ExposedPorts: []string{"8082/tcp", "50052/tcp"},
-		Networks:     []string{networkName},
-		NetworkAliases: map[string][]string{
-			networkName: {"bot"},
-		},
-		ConfigModifier: func(cfg *dockercontainer.Config) {
-			cfg.WorkingDir = "/app"
-		},
-		WaitingFor: wait.ForLog(`"msg":"starting bot"`).WithStartupTimeout(10 * time.Second),
-		Env: map[string]string{
-			"BOT_ADDR_HTTP":        "0.0.0.0:8082",
-			"BOT_ADDR_GRPC":        "0.0.0.0:50052",
-			"SCRAPPER_ADDR_GRPC":   "scrapper:50051",
-			"APP_TELEGRAM_TOKEN":   "dummy",
-			"BOT_DISABLE_TELEGRAM": "1",
-		},
-	}
-
-	bot, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: botReq,
-		Started:          false,
-	})
-	if err != nil {
-		dumpContainerLogs(ctx, t, scr, "scrapper")
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot create bot container: %v", err)
-		return nil, false
-	}
-
-	if err = bot.Start(ctx); err != nil {
-		dumpContainerLogs(ctx, t, scr, "scrapper")
-		dumpContainerLogs(ctx, t, bot, "bot")
-		_ = bot.Terminate(ctx)
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot start bot container: %v", err)
-		return nil, false
-	}
-
-	scrHost, err := scr.Host(ctx)
-	if err != nil {
-		_ = bot.Terminate(ctx)
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot get scrapper host: %v", err)
-		return nil, false
-	}
-	scrPort, err := scr.MappedPort(ctx, "8080/tcp")
-	if err != nil {
-		_ = bot.Terminate(ctx)
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot get scrapper port: %v", err)
-		return nil, false
-	}
-
-	botHost, err := bot.Host(ctx)
-	if err != nil {
-		_ = bot.Terminate(ctx)
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot get bot host: %v", err)
-		return nil, false
-	}
-	botPort, err := bot.MappedPort(ctx, "8082/tcp")
-	if err != nil {
-		_ = bot.Terminate(ctx)
-		_ = scr.Terminate(ctx)
-		_ = network.Remove(ctx)
-		t.Skipf("skip e2e: cannot get bot port: %v", err)
-		return nil, false
-	}
-
-	return &e2eEnv{
-		BotBaseURL:      fmt.Sprintf("http://%s:%s", scrOrLocalhost(botHost), botPort.Port()),
-		ScrapperBaseURL: fmt.Sprintf("http://%s:%s", scrOrLocalhost(scrHost), scrPort.Port()),
-		network:         network,
-		bot:             bot,
-		scrapper:        scr,
-		http:            httpClient,
-		projectRoot:     root,
-	}, true
 }
