@@ -16,6 +16,8 @@ var (
 	ErrLinkAlreadyTracked = errors.New("err: link with same url already tracked")
 	ErrLinkNotFound       = errors.New("err: link does not found")
 	ErrInvalidParams      = errors.New("err: invalid params")
+	ErrTagAlreadyExist    = errors.New("err: tag with same url already exist")
+	ErrTagNotFound        = errors.New("err: tag does not found")
 )
 
 type ChatRepository interface {
@@ -43,4 +45,11 @@ type BotNotifier interface {
 type Checker interface {
 	Match(url string) bool
 	Check(ctx context.Context, url string, since time.Time) (desc string, updatedAt time.Time, updated bool, err error)
+}
+
+type TagRepository interface {
+	CreateTag(ctx context.Context, chatID int64, name string) error
+	GetTagsByChatID(ctx context.Context, chatID int64) ([]string, error)
+	UpdateTag(ctx context.Context, chatID int64, oldName, newName string) error
+	DeleteTag(ctx context.Context, chatID int64, name string) error
 }

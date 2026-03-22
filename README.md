@@ -4,10 +4,10 @@
 
 ---
 ### Конфиг
-`app.env` file simple example:
+`app.env` шаблон:
 ```text
 bot{
-    app_telegram_token = ""
+    app_telegram_token = "PUT_YOUR_TOKEN"
     app_telegram_token = ${?APP_TELEGRAM_TOKEN}
 
     scrapper_addr_grpc = "0.0.0.0:50051"
@@ -33,15 +33,24 @@ scrapper{
     bot_addr_grpc = "0.0.0.0:50052"
     bot_addr_grpc = ${?BOT_ADDR_GRPC}
 
-    github_token = ""
+    github_token = "PUT_YOUR_TOKEN"
     github_token = ${?GITHUB_TOKEN}
 
-    stack_overflow_key = ""
+    stack_overflow_key = "PUT_YOUR_TOKEN"
     stack_overflow_key = ${?STACK_OVERFLOW_KEY}
 
     minutes_interval_check = 1
     minutes_interval_check = ${?MINUTES_INTERVAL_CHECK}
-}}
+
+    postgres_dsn="postgres://postgres:postgres@postgres:5432/link_tracker?sslmode=disable"
+    postgres_dsn = ${?POSTGRES_DSN}
+
+    migrations_path ="/app/migrations"
+    migrations_path = ${?MIGRATIONS_PATH}
+
+    db_access_type="sql"
+    db_access_type = ${?DB_ACCESS_TYPE}
+}
 ```
 ---
 ## Команда запуска
@@ -56,17 +65,6 @@ make scrapper_run
 ```bash
 docker compose up --build
 ```
-### необходимо будет 
-в `docker-compose.yml`
-указать -
-`APP_TELEGRAM_TOKEN: "${APP_TELEGRAM_TOKEN:-}"`\
-либо стереть эту строку, при указании в `app.env`
-### при желании
-`GITHUB_TOKEN: "${GITHUB_TOKEN:-}"`\
-`STACK_OVERFLOW_KEY: "${STACK_OVERFLOW_KEY:-}"`\
-Без них будут действовать более строгие лимиты API
-запросы будут выполняться без аутентифиции
-
 ---
 ## Для удобства:
 Команда запуска линетера

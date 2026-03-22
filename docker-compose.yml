@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: link-tracker-postgres
     environment:
       POSTGRES_DB: link_tracker
@@ -24,13 +24,9 @@ services:
     working_dir: /app
     volumes:
       - ./app.env:/app/app.env:ro
-    environment:
-      SCRAPPER_ADDR_GRPC: "0.0.0.0:50051"
-      SCRAPPER_ADDR_HTTP: "0.0.0.0:8080"
-      BOT_ADDR_GRPC: "bot:50052"
-      MINUTES_INTERVAL_CHECK: "1"
-      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
-      STACK_OVERFLOW_KEY: "${STACK_OVERFLOW_KEY:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -44,12 +40,6 @@ services:
       - ./app.env:/app/app.env:ro
     depends_on:
       - scrapper
-    environment:
-      APP_TELEGRAM_TOKEN: "${APP_TELEGRAM_TOKEN:-}"
-      SCRAPPER_ADDR_GRPC: "scrapper:50051"
-      BOT_ADDR_GRPC: "0.0.0.0:50052"
-      BOT_ADDR_HTTP: "0.0.0.0:8082"
-      BOT_DISABLE_TELEGRAM: "false"
     ports:
       - "8082:8082"
       - "50052:50052"

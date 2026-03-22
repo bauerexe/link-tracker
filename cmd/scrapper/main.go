@@ -7,18 +7,21 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+	scrapperapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/db"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/scrapper/checkers"
+	controller "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/grpc/scrapper"
+	ormrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/postgres"
+	rawrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/raw_postgres"
+	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	scrapperapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/scrapper/checkers"
-	controller "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/grpc/scrapper"
-	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/inmemory"
-	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -26,6 +29,7 @@ func main() {
 		fx.Provide(
 			newConfig,
 			newZap,
+			newPostgresPool,
 			newChatRepo,
 			newLinkRepo,
 			newScrapperServer,
@@ -39,7 +43,7 @@ func main() {
 			newCheckers,
 			newScheduler,
 		),
-		fx.Invoke(runScrapper, runScheduler),
+		fx.Invoke(runMigrations, runScrapper, runScheduler),
 	).Run()
 }
 
@@ -68,7 +72,6 @@ func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
 
 func newZap() (*zap.Logger, error) {
 	cfg := zap.NewProductionConfig()
-	// cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	cfg.EncoderConfig.TimeKey = "ts"
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
@@ -81,12 +84,43 @@ func newZap() (*zap.Logger, error) {
 	return log, nil
 }
 
-func newChatRepo() scrapperapp.ChatRepository {
-	return repository.NewChatRepository()
+func newPostgresPool(lc fx.Lifecycle, cfg *config.ScrapperConfig, log *zap.Logger) (*pgxpool.Pool, error) {
+	pool, err := db.NewPostgresPool(context.Background(), cfg.PostgresDSN)
+	if err != nil {
+		return nil, err
+	}
+
+	lc.Append(fx.Hook{
+		OnStop: func(_ context.Context) error {
+			log.Info("closing postgres pool")
+			pool.Close()
+			return nil
+		},
+	})
+
+	return pool, nil
 }
 
-func newLinkRepo() scrapperapp.LinkRepository {
-	return repository.NewLinkRepository()
+func newChatRepo(cfg *config.ScrapperConfig, pool *pgxpool.Pool) (scrapperapp.ChatRepository, error) {
+	switch cfg.DBAccessType {
+	case "sql":
+		return rawrepo.NewChatRepository(pool), nil
+	case "orm":
+		return ormrepo.NewChatRepository(pool), nil
+	default:
+		return nil, config.ErrorParseFile
+	}
+}
+
+func newLinkRepo(cfg *config.ScrapperConfig, pool *pgxpool.Pool) (scrapperapp.LinkRepository, error) {
+	switch cfg.DBAccessType {
+	case "sql":
+		return rawrepo.NewLinkRepository(pool), nil
+	case "orm":
+		return ormrepo.NewLinkRepository(pool), nil
+	default:
+		return nil, config.ErrorParseFile
+	}
 }
 
 func newScrapperServer(log *zap.Logger, chatRepo scrapperapp.ChatRepository, linkRepo scrapperapp.LinkRepository) pbv1.ScrapperServer {
@@ -172,6 +206,14 @@ func newScheduler(
 		Checkers: checkers,
 		Log:      log,
 		Interval: interval,
+	})
+}
+
+func runMigrations(lc fx.Lifecycle, cfg *config.ScrapperConfig) {
+	lc.Append(fx.Hook{
+		OnStart: func(_ context.Context) error {
+			return db.RunMigrations(cfg.PostgresDSN, cfg.MigrationsPath)
+		},
 	})
 }
 

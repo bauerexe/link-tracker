@@ -5,11 +5,13 @@ go 1.25.6
 require (
 	github.com/byrnedo/typesafe-config v1.0.2
 	github.com/docker/docker v28.5.1+incompatible
+	github.com/doug-martin/goqu/v9 v9.19.0
 	github.com/envoyproxy/protoc-gen-validate v1.3.3
 	github.com/go-co-op/gocron/v2 v2.19.1
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0
+	github.com/jackc/pgconn v1.14.3
 	github.com/jackc/pgx/v5 v5.9.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
@@ -44,7 +46,10 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
+	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgproto3/v2 v2.3.3 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect

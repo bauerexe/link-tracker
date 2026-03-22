@@ -37,11 +37,3 @@ CREATE TABLE chat_link_tags
     tag_id       BIGINT NOT NULL REFERENCES tags (id) ON DELETE CASCADE,
     UNIQUE (chat_link_id, tag_id)
 );
-
-CREATE TABLE chat_link_filters
-(
-    id           BIGSERIAL PRIMARY KEY,
-    chat_link_id BIGINT NOT NULL REFERENCES chat_links (id) ON DELETE CASCADE,
-    value        TEXT   NOT NULL,
-    UNIQUE (chat_link_id, value)
-);
