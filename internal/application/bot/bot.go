@@ -39,7 +39,6 @@ type Bot struct {
 }
 
 var (
-	HTTPListenAndServe = http.ListenAndServe
 	NetListen          = net.Listen
 	ExitFn             = os.Exit
 	HttpServe          = http.Serve
@@ -109,10 +108,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		case upd, ok := <-updates:
 			cont, err := b.handleIncomingMessage(upd, ok)
 			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
-				return err
+				b.log.Error("failed to handle incoming message", zap.Error(err))
 			}
 			if !cont {
-				return nil
+				b.log.Error("failed to handle incoming message")
 			}
 		}
 	}
@@ -236,7 +235,9 @@ func (b *Bot) runGrpc() {
 		ExitFn(-1)
 	}
 	srv := NewGrpcServer()
+	b.mu.Lock()
 	b.grpcServer = srv
+	b.mu.Unlock()
 	reflection.Register(srv)
 	pbv1.RegisterBotServer(srv, b.server)
 
