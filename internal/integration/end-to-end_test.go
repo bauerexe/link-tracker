@@ -22,6 +22,8 @@ func TestEndToEnd(t *testing.T) {
 		t.Skip("testcontainers rootless Docker is not supported on Windows")
 	}
 
+	testcontainers.SkipIfProviderIsNotHealthy(t)
+
 	env := mustStartE2EEnv(t)
 	defer env.Close(t)
 
