@@ -3,6 +3,7 @@ package botapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"go.uber.org/zap"
@@ -40,7 +41,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	updates, err := b.botRepository.GetMessages(ctx, timeoutSec)
 	if err != nil {
 		b.log.Error("failed to get messages", zap.Error(err))
-		return err
+		return fmt.Errorf("get messages: %w", err)
 	}
 
 	b.log.Info("bot run")
@@ -49,11 +50,12 @@ func (b *Bot) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			b.log.Info("ctx done", zap.Error(ctx.Err()))
-			return ctx.Err()
+			return fmt.Errorf("ctx done in Run bot: %w", ctx.Err())
 
 		case upd, ok := <-updates:
-			cont, err := b.handleIncomingMessage(upd, ok)
-			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
+			var cont bool
+			cont, err = b.handleIncomingMessage(upd, ok)
+			if err != nil && !errors.Is(err, ErrUnknownCommand) {
 				return err
 			}
 			if !cont {
@@ -78,7 +80,7 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 
 	text := strings.TrimSpace(upd.Text)
 	if text == "" {
-		return true, ErrorUnknownCommand
+		return true, ErrUnknownCommand
 	}
 
 	if err := b.processMessage(logger, upd, text); err != nil {
@@ -103,9 +105,9 @@ func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string
 
 	logger.Info("bot dispatched message to reply", zap.String("reply", replyText))
 
-	if err := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText); err != nil {
+	if err = b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText); err != nil {
 		logger.Error("error send message", zap.Error(err))
-		return err
+		return fmt.Errorf("error send message: %w", err)
 	}
 
 	logger.Info("bot sent reply message to user", zap.String("reply", replyText))

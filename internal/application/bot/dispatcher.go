@@ -12,7 +12,12 @@ const (
 	CommandHelp  domain.Command = "/help"
 )
 
-var ErrorUnknownCommand = errors.New("error unknown command")
+var ErrUnknownCommand = errors.New("error unknown command")
+
+// BotDispatcher - dispatcher of commands and them handlers
+type BotDispatcher struct {
+	handlers map[domain.Command]domain.Handler
+}
 
 func NewBotDispatcher(handlers map[domain.Command]domain.Handler) *BotDispatcher {
 	if handlers == nil {
@@ -22,11 +27,6 @@ func NewBotDispatcher(handlers map[domain.Command]domain.Handler) *BotDispatcher
 		}
 	}
 	return &BotDispatcher{handlers: handlers}
-}
-
-// BotDispatcher - dispatcher of commands and them handlers
-type BotDispatcher struct {
-	handlers map[domain.Command]domain.Handler
 }
 
 // StartHandler - handler of message with command - CommandStart
@@ -57,5 +57,9 @@ func (r *BotDispatcher) Dispatch(message domain.Message, cmd domain.Command, arg
 	if !ok {
 		return fmt.Sprintf("Не знаю команду %s. Напиши /help", cmd), nil
 	}
-	return h.Handle(message.ChatID, args)
+	ans, err := h.Handle(message.ChatID, args)
+	if err != nil {
+		return "", fmt.Errorf("dispatch err: %w", err)
+	}
+	return ans, nil
 }

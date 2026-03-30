@@ -1,11 +1,12 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig(t *testing.T) {
@@ -20,7 +21,7 @@ func TestConfig(t *testing.T) {
 	}
 	initFunc := func(str string) func(testFs afero.Fs) {
 		return func(testFs afero.Fs) {
-			_ = afero.WriteFile(testFs, ".env", []byte(str), 0o644)
+			_ = afero.WriteFile(testFs, "app.env", []byte(str), 0o644)
 		}
 	}
 
@@ -39,25 +40,25 @@ func TestConfig(t *testing.T) {
 		expected: "",
 		init:     initFunc(`bot {app_telegram_token = "TEST_TOKEN}`),
 		positive: false,
-		err:      ErrorParseFile,
+		err:      ErrParseFile,
 	}, {
 		name:     "negative 2",
 		expected: "",
 		init:     initFunc(`bot {app_telegram_token : "TEST_TOKEN}"`),
 		positive: false,
-		err:      ErrorParseFile,
+		err:      ErrParseFile,
 	}, {
 		name:     "negative 3",
 		expected: "",
 		init:     initFunc(`{app_telegram_token = "TEST_TOKEN"}`),
 		positive: false,
-		err:      ErrorParseFile,
+		err:      ErrParseFile,
 	}, {
 		name:     "negative 3",
 		expected: "",
 		init:     initFunc(`app_telegram_token = "TEST_TOKEN"`),
 		positive: false,
-		err:      ErrorParseFile,
+		err:      ErrParseFile,
 	}}
 
 	for _, tc := range testCases {
@@ -67,12 +68,12 @@ func TestConfig(t *testing.T) {
 			tc.init(testFs)
 			cfg, err := NewBotConfig(testFs)
 			if err != nil && tc.positive {
-				assert.Error(t, err, "err in positive test")
+				require.Error(t, err, "err in positive test")
 			} else if err != nil {
-				assert.EqualError(t, err, tc.err.Error())
+				require.EqualError(t, err, tc.err.Error())
 			}
 			if !tc.positive {
-				assert.Error(t, fmt.Errorf("expected err"))
+				assert.Error(t, errors.New("expected err"))
 			} else {
 				assert.Equal(t, tc.expected, cfg.TokenTGBot)
 			}

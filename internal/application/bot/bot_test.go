@@ -3,10 +3,10 @@ package botapp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
@@ -48,7 +48,6 @@ func TestNewBot(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -59,13 +58,13 @@ func TestNewBot(t *testing.T) {
 			bot, err := NewBot(tc.token, repo, tc.router, zap.NewNop())
 
 			if tc.positive {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.NotNil(t, bot)
 				return
 			}
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, bot)
-			assert.EqualError(t, err, tc.err.Error())
+			require.EqualError(t, err, tc.err.Error())
 		})
 	}
 }
@@ -90,9 +89,7 @@ func TestBot_Run(t *testing.T) {
 	testCases := []TestCase{
 		{
 			name: "positive 1 - help command is dispatched and replied",
-			ctx: func() context.Context {
-				return context.Background()
-			},
+			ctx:  context.Background,
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
 				repo.EXPECT().SendMessage(int64(42), 7, "/start — начать\n/help — список команд").Return(nil)
@@ -105,9 +102,7 @@ func TestBot_Run(t *testing.T) {
 		},
 		{
 			name: "positive 2 - whitespace message is ignored",
-			ctx: func() context.Context {
-				return context.Background()
-			},
+			ctx:  context.Background,
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
 				repo.EXPECT().SendMessage(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
@@ -120,9 +115,7 @@ func TestBot_Run(t *testing.T) {
 		},
 		{
 			name: "positive 3 - unknown command returns fallback reply and is sent",
-			ctx: func() context.Context {
-				return context.Background()
-			},
+			ctx:  context.Background,
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
 				repo.EXPECT().SendMessage(int64(1), 2, "Не знаю команду /unknown. Напиши /help").Return(nil)
@@ -135,9 +128,7 @@ func TestBot_Run(t *testing.T) {
 		},
 		{
 			name: "negative 1 - GetMessages returns error",
-			ctx: func() context.Context {
-				return context.Background()
-			},
+			ctx:  context.Background,
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				_ = updates
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(nil), errors.New("get messages error"))
@@ -150,9 +141,7 @@ func TestBot_Run(t *testing.T) {
 		},
 		{
 			name: "negative 2 - SendMessage returns error",
-			ctx: func() context.Context {
-				return context.Background()
-			},
+			ctx:  context.Background,
 			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
 				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
 				repo.EXPECT().SendMessage(int64(42), 7, "/start — начать\n/help — список команд").Return(errors.New("send error"))
@@ -184,7 +173,6 @@ func TestBot_Run(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -196,7 +184,7 @@ func TestBot_Run(t *testing.T) {
 			tc.initMock(repo, updates)
 
 			bot, err := NewBot("TEST_TOKEN", repo, router, zap.NewNop())
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.NotNil(t, bot)
 
 			go tc.feed(updates)
@@ -204,17 +192,13 @@ func TestBot_Run(t *testing.T) {
 			runErr := bot.Run(tc.ctx())
 
 			if tc.positive {
-				if runErr != nil {
-					assert.Error(t, runErr, "err in positive test")
-				}
-				assert.NoError(t, runErr)
+				require.NoError(t, runErr)
 				return
 			}
 
-			assert.Error(t, fmt.Errorf("expected err"))
-			assert.Error(t, runErr)
+			require.Error(t, runErr)
 			if tc.expected != nil {
-				assert.EqualError(t, runErr, tc.expected.Error())
+				require.ErrorContains(t, runErr, tc.expected.Error())
 			}
 		})
 	}

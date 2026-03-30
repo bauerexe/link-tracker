@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	stdlog "log"
 
@@ -26,7 +27,7 @@ func main() {
 			newBotUsecase,
 		),
 		fx.Invoke(
-			tgBotApiDiscard,
+			tgBotAPIDiscard,
 			runBot,
 		),
 	)
@@ -38,7 +39,7 @@ func newConfig(log *zap.Logger) (config.BotConfig, error) {
 	fs := afero.NewOsFs()
 	cfg, err := config.NewBotConfig(fs)
 	if err != nil {
-		return config.BotConfig{}, err
+		return config.BotConfig{}, fmt.Errorf("load bot config: %w", err)
 	}
 	log.Info("init config")
 	return cfg, nil
@@ -51,7 +52,7 @@ func newZap() (*zap.Logger, error) {
 
 	log, err := cfg.Build()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("bot zap build: %w", err)
 	}
 
 	log = log.Named("bot").With(zap.String("service", "bot"))
@@ -65,7 +66,9 @@ func newRouter() *botapp.BotDispatcher {
 func newBotRepo(cfg config.BotConfig,
 	log *zap.Logger,
 ) (botapp.BotGateway, error) {
-	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"))
+	gw, err := botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"))
+	err = fmt.Errorf("bot init repo: %w", err)
+	return gw, err
 }
 
 func newBotUsecase(cfg config.BotConfig,
@@ -73,7 +76,9 @@ func newBotUsecase(cfg config.BotConfig,
 	router *botapp.BotDispatcher,
 	log *zap.Logger,
 ) (*botapp.Bot, error) {
-	return botapp.NewBot(cfg.TokenTGBot, repo, router, log.With(zap.String("layer", "application")).Named("usecase.bot"))
+	bot, err := botapp.NewBot(cfg.TokenTGBot, repo, router, log.With(zap.String("layer", "application")).Named("usecase.bot"))
+	err = fmt.Errorf("bot init usecase: %w", err)
+	return bot, err
 }
 
 func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
@@ -106,6 +111,6 @@ func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
 	})
 }
 
-func tgBotApiDiscard() {
+func tgBotAPIDiscard() {
 	_ = tgbotapi.SetLogger(stdlog.New(io.Discard, "", 0))
 }
