@@ -99,6 +99,8 @@ func (r *BotGateway) handleTelegramUpdate(ctx context.Context, out chan<- domain
 	msg := domain.Message{
 		ChatID:    upd.Message.Chat.ID,
 		Text:      upd.Message.Text,
+		Command:   domain.Command(upd.Message.Command()),
+		Arguments: upd.Message.CommandArguments(),
 		MessageID: upd.Message.MessageID,
 	}
 

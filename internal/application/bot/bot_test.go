@@ -192,7 +192,11 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	type step struct{ text string }
+	type step struct {
+		text    string
+		command string
+		args    string
+	}
 
 	tests := []struct {
 		name        string
@@ -206,7 +210,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_valid_url_with_tags",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "/track"},
 				{text: "https://github.com/user/repo"},
 				{text: "tag1, tag2"},
 			},
@@ -224,7 +228,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_invalid_url",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "/track"},
 				{text: "tbank://github.com/user/repo"},
 			},
 			wantSubstr: []string{
@@ -236,9 +240,9 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_already_exists",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "/track"},
 				{text: "https://github.com/user/repo"},
-				{text: "/skip"},
+				{text: "/skip", command: "/skip"},
 			},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.createErr = status.Error(codes.AlreadyExists, "already")
@@ -253,7 +257,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_has_links",
-			steps: []step{{text: "/list"}},
+			steps: []step{{text: "/list", command: "/list"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listResp = &pbv1.ListLinksResponse{
 					Links: []*pbv1.LinkResponse{
@@ -272,7 +276,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_empty_notfound",
-			steps: []step{{text: "/list"}},
+			steps: []step{{text: "/list", command: "/list"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listErr = status.Error(codes.NotFound, "no links")
 			},
@@ -283,7 +287,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_by_tag",
-			steps: []step{{text: "/list go"}},
+			steps: []step{{text: "/list go", command: "/list", args: "go"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listResp = &pbv1.ListLinksResponse{
 					Links: []*pbv1.LinkResponse{
@@ -336,6 +340,8 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 					ChatID:    1,
 					MessageID: i + 1,
 					Text:      st.text,
+					Command:   domain.Command(st.command),
+					Arguments: st.args,
 				}, true)
 				if err != nil && !errors.Is(err, ErrorUnknownCommand) {
 					t.Fatalf("step %d (%q) err: %v", i, st.text, err)
