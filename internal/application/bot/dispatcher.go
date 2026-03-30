@@ -2,18 +2,17 @@ package botapp
 
 import (
 	"errors"
-	"fmt"
 
 	handlers_pkg "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
 const (
-	CommandStart   domain.Command = "/start"
-	CommandHelp    domain.Command = "/help"
-	CommandTrack   domain.Command = "/track"
-	CommandUntrack domain.Command = "/untrack"
-	CommandList    domain.Command = "/list"
+	CommandStart   domain.Command = "start"
+	CommandHelp    domain.Command = "help"
+	CommandTrack   domain.Command = "track"
+	CommandUntrack domain.Command = "untrack"
+	CommandList    domain.Command = "list"
 )
 
 var ErrorUnknownCommand = errors.New("error unknown command")
@@ -37,7 +36,7 @@ type BotDispatcher struct {
 func (r *BotDispatcher) Dispatch(message domain.Message, cmd domain.Command, args string) (string, error) {
 	h, ok := r.handlers[cmd]
 	if !ok {
-		return fmt.Sprintf("Не знаю команду %s. Напиши /help", cmd), ErrorUnknownCommand
+		return "", ErrorUnknownCommand
 	}
 	return h.Handle(message.ChatID, args)
 }

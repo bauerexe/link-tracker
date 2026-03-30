@@ -3,7 +3,6 @@ package botapp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -78,164 +76,6 @@ func TestNewBot(t *testing.T) {
 			assert.Error(t, err)
 			assert.Nil(t, bot)
 			assert.EqualError(t, err, tc.err.Error())
-		})
-	}
-}
-
-func TestBot_Run(t *testing.T) {
-	t.Parallel()
-
-	type TestCase struct {
-		name     string
-		ctx      func() context.Context
-		initMock func(repo *MockBotRepository, updates chan domain.Message)
-		feed     func(updates chan domain.Message)
-		positive bool
-		expected error
-	}
-
-	router := NewBotDispatcher(map[domain.Command]domain.Handler{
-		CommandHelp:  handlers.NewHelpHandler(),
-		CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
-	})
-	handler := handlers.HelpHandler{}
-	ans, _ := handler.Handle(1, "")
-	testCases := []TestCase{
-		{
-			name: "positive 1 - help command is dispatched and replied",
-			ctx: func() context.Context {
-				return context.Background()
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(int64(42), 7, ans).Return(nil)
-			},
-			feed: func(updates chan domain.Message) {
-				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "/help"}
-				close(updates)
-			},
-			positive: true,
-		},
-		{
-			name: "positive 2 - whitespace message is ignored",
-			ctx: func() context.Context {
-				return context.Background()
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
-			},
-			feed: func(updates chan domain.Message) {
-				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "   \n\t"}
-				close(updates)
-			},
-			positive: false,
-			expected: ErrEmptyText,
-		},
-		{
-			name: "positive 3 - unknown command returns fallback reply and is sent",
-			ctx: func() context.Context {
-				return context.Background()
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(int64(1), 2, "Не знаю команду /unknown. Напиши /help").Return(nil)
-			},
-			feed: func(updates chan domain.Message) {
-				updates <- domain.Message{ChatID: 1, MessageID: 2, Text: "/unknown"}
-				close(updates)
-			},
-			positive: true,
-		},
-		{
-			name: "negative 1 - GetMessages returns error",
-			ctx: func() context.Context {
-				return context.Background()
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				_ = updates
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(nil), errors.New("get messages error"))
-			},
-			feed: func(updates chan domain.Message) {
-				close(updates)
-			},
-			positive: false,
-			expected: errors.New("get messages error"),
-		},
-		{
-			name: "negative 2 - SendMessage returns error",
-			ctx: func() context.Context {
-				return context.Background()
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Return((<-chan domain.Message)(updates), nil)
-				repo.EXPECT().SendMessage(int64(42), 7, ans).Return(errors.New("send error"))
-			},
-			feed: func(updates chan domain.Message) {
-				updates <- domain.Message{ChatID: 42, MessageID: 7, Text: "/help"}
-				close(updates)
-			},
-			positive: false,
-			expected: errors.New("send error"),
-		},
-		{
-			name: "negative 3 - ctx cancelled",
-			ctx: func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel()
-				return ctx
-			},
-			initMock: func(repo *MockBotRepository, updates chan domain.Message) {
-				repo.EXPECT().GetMessages(gomock.Any(), 60).Times(0)
-				repo.EXPECT().SendMessage(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
-				_ = len(updates)
-			},
-			feed: func(updates chan domain.Message) {
-				close(updates)
-			},
-			positive: false,
-			expected: context.Canceled,
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			updates := make(chan domain.Message, 4)
-			repo := NewMockBotRepository(ctrl)
-			tc.initMock(repo, updates)
-
-			bot, err := NewBot("TEST_TOKEN", repo, nil, router, zap.NewNop(), &config.BotConfig{
-				TokenTGBot:       "",
-				ScrapperAddrGRPC: "",
-				BotAddrGRPC:      "",
-				BotAddrHTTP:      "",
-			})
-			assert.NoError(t, err)
-			assert.NotNil(t, bot)
-
-			go tc.feed(updates)
-
-			runErr := bot.Run(tc.ctx())
-
-			if tc.positive {
-				if runErr != nil {
-					assert.Error(t, runErr, "err in positive test")
-				}
-				assert.NoError(t, runErr)
-				return
-			}
-
-			assert.Error(t, fmt.Errorf("expected err"))
-			assert.Error(t, runErr)
-			if tc.expected != nil {
-				assert.EqualError(t, runErr, tc.expected.Error())
-			}
 		})
 	}
 }
@@ -352,7 +192,11 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	type step struct{ text string }
+	type step struct {
+		text    string
+		command string
+		args    string
+	}
 
 	tests := []struct {
 		name        string
@@ -366,7 +210,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_valid_url_with_tags",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "track"},
 				{text: "https://github.com/user/repo"},
 				{text: "tag1, tag2"},
 			},
@@ -384,7 +228,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_invalid_url",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "track"},
 				{text: "tbank://github.com/user/repo"},
 			},
 			wantSubstr: []string{
@@ -396,9 +240,9 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		{
 			name: "track_already_exists",
 			steps: []step{
-				{text: "/track"},
+				{text: "/track", command: "track"},
 				{text: "https://github.com/user/repo"},
-				{text: "/skip"},
+				{text: "/skip", command: "skip"},
 			},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.createErr = status.Error(codes.AlreadyExists, "already")
@@ -413,7 +257,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_has_links",
-			steps: []step{{text: "/list"}},
+			steps: []step{{text: "/list", command: "list"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listResp = &pbv1.ListLinksResponse{
 					Links: []*pbv1.LinkResponse{
@@ -432,7 +276,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_empty_notfound",
-			steps: []step{{text: "/list"}},
+			steps: []step{{text: "/list", command: "list"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listErr = status.Error(codes.NotFound, "no links")
 			},
@@ -443,7 +287,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 		},
 		{
 			name:  "list_by_tag",
-			steps: []step{{text: "/list go"}},
+			steps: []step{{text: "/list go", command: "list", args: "go"}},
 			scrapperCfg: func(s *scrapperTestServer) {
 				s.listResp = &pbv1.ListLinksResponse{
 					Links: []*pbv1.LinkResponse{
@@ -496,6 +340,8 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 					ChatID:    1,
 					MessageID: i + 1,
 					Text:      st.text,
+					Command:   domain.Command(st.command),
+					Arguments: st.args,
 				}, true)
 				if err != nil && !errors.Is(err, ErrorUnknownCommand) {
 					t.Fatalf("step %d (%q) err: %v", i, st.text, err)

@@ -39,7 +39,6 @@ type Bot struct {
 }
 
 var (
-	HTTPListenAndServe = http.ListenAndServe
 	NetListen          = net.Listen
 	ExitFn             = os.Exit
 	HttpServe          = http.Serve
@@ -109,10 +108,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		case upd, ok := <-updates:
 			cont, err := b.handleIncomingMessage(upd, ok)
 			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
-				return err
+				b.log.Error("failed to handle incoming message", zap.Error(err))
 			}
 			if !cont {
-				return nil
+				b.log.Error("failed to handle incoming message")
 			}
 		}
 	}
@@ -136,7 +135,7 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 		return true, ErrEmptyText
 	}
 
-	handled, err := b.handleTrackDialog(logger, upd, text)
+	handled, err := b.handleTrackDialog(logger, upd)
 	if err != nil {
 		return false, err
 	}
@@ -144,24 +143,24 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 		return true, nil
 	}
 
-	if err = b.processMessage(logger, upd, text); err != nil {
+	if err = b.processMessage(logger, upd); err != nil {
 		return false, err
 	}
 
 	return true, nil
 }
 
-func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string) error {
-	cmd, args := parseCommand(text)
+func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message) error {
+	cmd, args := upd.Command, upd.Arguments
 
-	replyText, err := b.router.Dispatch(upd, domain.Command(cmd), args)
+	replyText, err := b.router.Dispatch(upd, cmd, args)
 	if err != nil {
 		if errors.Is(err, ErrorUnknownCommand) {
-			replyText = "Не знаю команду " + cmd + ". Напиши /help"
+			replyText = "Не знаю команду " + cmd.String() + ". Напиши /help"
 		} else {
 			logger.Error(
 				"error invalid command",
-				zap.String("command", cmd),
+				zap.String("command", cmd.String()),
 				zap.Error(err),
 			)
 			return err
@@ -177,18 +176,6 @@ func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message, text string
 
 	logger.Info("bot sent reply message to user", zap.String("reply", replyText))
 	return nil
-}
-
-func parseCommand(text string) (cmd, args string) {
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return "", ""
-	}
-	cmd = parts[0]
-	if len(parts) > 1 {
-		args = strings.Join(parts[1:], " ")
-	}
-	return cmd, args
 }
 
 func (b *Bot) runRest(ctx context.Context) {
@@ -236,7 +223,9 @@ func (b *Bot) runGrpc() {
 		ExitFn(-1)
 	}
 	srv := NewGrpcServer()
+	b.mu.Lock()
 	b.grpcServer = srv
+	b.mu.Unlock()
 	reflection.Register(srv)
 	pbv1.RegisterBotServer(srv, b.server)
 
@@ -247,11 +236,11 @@ func (b *Bot) runGrpc() {
 	}
 }
 
-func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message, text string) (bool, error) {
-	if text == "/track" || strings.HasPrefix(text, "/track ") {
+func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message) (bool, error) {
+	if upd.Command.String() == "track" {
 		return b.startTrackDialog(logger, upd)
 	}
-
+	logger.Info("AAAAAAAAAAAAAAA", zap.String("command", upd.Command.String()), zap.String("arguments", upd.Arguments), zap.String("command", upd.Command.String()))
 	b.fsm.mu.Lock()
 	st := b.fsm.get(upd.ChatID)
 	step := st.step
@@ -261,17 +250,17 @@ func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message, text str
 		return false, nil
 	}
 
-	handled, err := b.handleTrackControlCommands(logger, upd, text)
+	handled, err := b.handleTrackControlCommands(logger, upd)
 	if handled || err != nil {
 		return handled, err
 	}
 
 	switch step {
 	case trackWaitURL:
-		return b.handleTrackWaitURL(logger, upd, text)
+		return b.handleTrackWaitURL(logger, upd)
 
 	case trackWaitTags:
-		return b.handleTrackWaitTags(logger, upd, text)
+		return b.handleTrackWaitTags(logger, upd)
 
 	default:
 		b.fsm.mu.Lock()
@@ -293,14 +282,14 @@ func (b *Bot) startTrackDialog(logger *zap.Logger, upd domain.Message) (bool, er
 	return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
 }
 
-func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message, text string) (bool, error) {
-	if text == "/skip" {
+func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message) (bool, error) {
+	if upd.Command == "skip" {
 		b.fsm.mu.Lock()
 		url := b.fsm.get(upd.ChatID).draft.url
 		b.fsm.reset(upd.ChatID)
 		b.fsm.mu.Unlock()
 
-		replyText, err := b.router.Dispatch(upd, "/track", url)
+		replyText, err := b.router.Dispatch(upd, "track", url)
 		if err != nil {
 			logger.Error("track dispatch failed", zap.Error(err))
 			return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
@@ -310,7 +299,7 @@ func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message,
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
 	}
 
-	if text == "/cancel" {
+	if upd.Command == "cancel" {
 		b.fsm.mu.Lock()
 		b.fsm.reset(upd.ChatID)
 		b.fsm.mu.Unlock()
@@ -320,20 +309,20 @@ func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message,
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
 	}
 
-	if strings.HasPrefix(text, "/") {
+	if strings.HasPrefix(upd.Text, "/") {
 		b.fsm.mu.Lock()
 		b.fsm.reset(upd.ChatID)
 		b.fsm.mu.Unlock()
 
-		logger.Info("track dialog cancelled by another command", zap.String("cmd", text))
+		logger.Info("track dialog cancelled by another command", zap.String("cmd", upd.Text))
 		return false, nil
 	}
 
 	return false, nil
 }
 
-func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message, text string) (bool, error) {
-	url := strings.TrimSpace(text)
+func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message) (bool, error) {
+	url := strings.TrimSpace(upd.Text)
 	if url == "" {
 		reply := "Ссылка пустая. Пришли ссылку или /cancel."
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
@@ -354,8 +343,8 @@ func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message, text st
 	return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
 }
 
-func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message, text string) (bool, error) {
-	tags := parseTagsCSV(text)
+func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message) (bool, error) {
+	tags := parseTagsCSV(upd.Text)
 
 	b.fsm.mu.Lock()
 	url := b.fsm.get(upd.ChatID).draft.url
@@ -367,7 +356,7 @@ func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message, text s
 		args = url + " " + strings.Join(tags, " ")
 	}
 
-	replyText, err := b.router.Dispatch(upd, "/track", args)
+	replyText, err := b.router.Dispatch(upd, "track", args)
 	if err != nil {
 		logger.Error("track dispatch failed", zap.Error(err))
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())

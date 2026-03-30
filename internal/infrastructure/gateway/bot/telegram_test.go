@@ -102,6 +102,13 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 	r, ok := repo.(*BotGateway)
 	require.True(t, ok)
 
+	r.api.Client = &http.Client{
+		Transport: roundTripperRewrite{
+			base:   http.DefaultTransport,
+			target: targetURL,
+		},
+	}
+
 	mu.Lock()
 	assert.GreaterOrEqual(t, gotGetMe, 1)
 	assert.GreaterOrEqual(t, gotSetCmd, 1)
