@@ -1,4 +1,4 @@
-package scrapper_app
+package scrapperapp
 
 import (
 	"context"

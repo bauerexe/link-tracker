@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ type LinkItem struct {
 	Tags    []string `json:"tags"`
 	Filters []string `json:"filters"`
 }
+
 type e2eEnv struct {
 	BotBaseURL      string
 	ScrapperBaseURL string
@@ -43,40 +45,6 @@ func (e *e2eEnv) Close(t *testing.T) {
 	if e.network != nil {
 		_ = e.network.Remove(ctx)
 	}
-}
-
-func (e *e2eEnv) doNoBody(method, url string, headers map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	return e.http.Do(req)
-}
-
-func (e *e2eEnv) doJSON(method, url string, headers map[string]string, body any) (*http.Response, error) {
-	var buf *bytes.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		buf = bytes.NewReader(b)
-	} else {
-		buf = bytes.NewReader(nil)
-	}
-
-	req, err := http.NewRequest(method, url, buf)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	return e.http.Do(req)
 }
 
 func mustDecodeJSON(t *testing.T, resp *http.Response, out any) {
@@ -146,6 +114,48 @@ func (e *e2eEnv) DumpLogs(t *testing.T) {
 	dumpContainerLogs(ctx, t, e.bot, "bot")
 }
 
+func (e *e2eEnv) doNoBody(method, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request without body: %w", err)
+	}
+	resp, err := e.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request without body: %w", err)
+	}
+
+	return resp, nil
+}
+
+func (e *e2eEnv) doJSON(method, url string, headers map[string]string, body any) (*http.Response, error) {
+	var buf *bytes.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal json body: %w", err)
+		}
+		buf = bytes.NewReader(b)
+	} else {
+		buf = bytes.NewReader(nil)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), method, url, buf)
+	if err != nil {
+		return nil, fmt.Errorf("create json request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := e.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do json request: %w", err)
+	}
+
+	return resp, nil
+}
+
 func dumpContainerLogs(ctx context.Context, t *testing.T, c testcontainers.Container, name string) {
 	t.Helper()
 	if c == nil {
@@ -156,7 +166,12 @@ func dumpContainerLogs(ctx context.Context, t *testing.T, c testcontainers.Conta
 		t.Logf("[%s] cannot read logs: %v", name, err)
 		return
 	}
-	defer r.Close()
+	defer func() {
+		if closeErr := r.Close(); closeErr != nil {
+			t.Logf("[%s] cannot close logs reader: %v", name, closeErr)
+		}
+	}()
+
 	b, _ := io.ReadAll(r)
 	t.Logf("=== %s logs ===\n%s\n=== end %s logs ===", name, string(b), name)
 }

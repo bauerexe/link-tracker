@@ -45,8 +45,8 @@ func (h *TrackHandler) Handle(chatID int64, args string) (string, error) {
 		Filters: nil,
 	}, grpc.WaitForReady(true))
 	if err != nil {
-		st, ok := status.FromError(err)
-		if ok && st.Code() == codes.AlreadyExists {
+		st, stOK := status.FromError(err)
+		if stOK && st.Code() == codes.AlreadyExists {
 			return "Ссылка уже отслеживается", nil
 		}
 

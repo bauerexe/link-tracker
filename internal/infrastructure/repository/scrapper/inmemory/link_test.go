@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 )
@@ -69,7 +71,7 @@ func TestLinkRepository_CreateLink(t *testing.T) {
 
 			if tc.err == nil {
 				assert.NotNil(t, link)
-				assert.Greater(t, link.ID, int64(0))
+				assert.Positive(t, link.ID)
 				assert.Equal(t, tc.url, link.URL)
 				assert.Equal(t, tc.tags, link.Tags)
 				assert.Equal(t, tc.filters, link.Filters)
@@ -117,9 +119,9 @@ func TestLinkRepository_GetLinksByChatID(t *testing.T) {
 	{
 		ctxPrep := context.Background()
 		_, err := rp.CreateLink(ctxPrep, 1, "http://example.com", []string{"t1"}, []string{"f1"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		_, err = rp.CreateLink(ctxPrep, 1, "http://example.org", []string{"t2"}, []string{"f2"})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
@@ -135,7 +137,7 @@ func TestLinkRepository_GetLinksByChatID(t *testing.T) {
 			if tc.err == nil {
 				assert.Len(t, links, tc.wantN)
 				for _, l := range links {
-					assert.Greater(t, l.ID, int64(0))
+					assert.Positive(t, l.ID)
 					assert.NotEmpty(t, l.URL)
 				}
 				return
@@ -187,13 +189,14 @@ func TestLinkRepository_DeleteLink(t *testing.T) {
 
 	ctxPrep := context.Background()
 	_, err := rp.CreateLink(ctxPrep, 1, "http://example.com", []string{"t1"}, []string{"f1"})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*110)
 	defer cancel()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			deleted, err := rp.DeleteLink(ctx, tc.chatID, tc.url)
+			var deleted *domain.Link
+			deleted, err = rp.DeleteLink(ctx, tc.chatID, tc.url)
 			if err != nil {
 				assert.ErrorIs(t, err, tc.err)
 				return
@@ -202,7 +205,7 @@ func TestLinkRepository_DeleteLink(t *testing.T) {
 			if tc.err == nil {
 				assert.NotNil(t, deleted)
 				assert.Equal(t, tc.url, deleted.URL)
-				assert.Greater(t, deleted.ID, int64(0))
+				assert.Positive(t, deleted.ID)
 				return
 			}
 

@@ -1,7 +1,8 @@
-package scrapper_app
+package scrapperapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,23 +21,28 @@ type Scheduler struct {
 	Interval time.Duration
 }
 
+const (
+	defaultInterval = 2 * time.Minute
+	contextTimeout  = 30 * time.Second
+)
+
 func NewScheduler(scheduler *Scheduler) (*Scheduler, error) {
 	scheduler.Log = scheduler.Log.Named("application")
 	scheduler.Log = scheduler.Log.With(zap.String("pkg", "scrapper"))
 	if scheduler.Interval == 0 {
-		scheduler.Interval = 2 * time.Minute
+		scheduler.Interval = defaultInterval
 	}
 	if scheduler.Links == nil {
 		scheduler.Log.Error("err: nil links")
-		return nil, fmt.Errorf("err: nil links")
+		return nil, errors.New("err: nil links")
 	}
 	if scheduler.Notifier == nil {
 		scheduler.Log.Error("err: nil notifier")
-		return nil, fmt.Errorf("err: nil notifier")
+		return nil, errors.New("err: nil notifier")
 	}
 	if len(scheduler.Checkers) == 0 || scheduler.Checkers == nil {
 		scheduler.Log.Error("err: nil checkers or zero elements in checkers")
-		return nil, fmt.Errorf("err: nil checkers or zero elements in checkers")
+		return nil, errors.New("err: nil checkers or zero elements in checkers")
 	}
 	return scheduler, nil
 }
@@ -73,7 +79,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) tickWithNow(ctx context.Context, now time.Time) {
-	jobCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	jobCtx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 
 	links, err := s.Links.ListLinks(jobCtx)

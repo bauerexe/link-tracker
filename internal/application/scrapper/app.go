@@ -1,4 +1,4 @@
-package scrapper_app
+package scrapperapp
 
 import (
 	"context"
@@ -34,10 +34,9 @@ type Scrapper struct {
 }
 
 var (
-	HttpListenAndServe = http.ListenAndServe
-	NetListen          = net.Listen
-	ExitFn             = os.Exit
-	HttpServe          = http.Serve
+	NetListen = net.Listen
+	ExitFn    = os.Exit
+	HTTPServe = http.Serve
 
 	RegisterScrapperGateway = pbv1.RegisterScrapperHandlerFromEndpoint
 	NewGrpcServer           = grpc.NewServer
@@ -105,7 +104,7 @@ func (s *Scrapper) runRest(ctx context.Context) {
 
 	s.log.Info("gateway listening at port", zap.String("port", s.cfg.ScrapperAddrHTTP))
 
-	if err = HttpServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err = HTTPServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
 		s.log.Error("gateway serve error", zap.Error(err))
 	}
 }

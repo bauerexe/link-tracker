@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestScrapperConfig(t *testing.T) {
@@ -46,7 +47,7 @@ func TestScrapperConfig(t *testing.T) {
 			name:     "negative (parse error: unclosed quote)",
 			init:     initFunc(`scrapper { scrapper_addr_grpc = "localhost:50051 bot_addr_grpc = "localhost:50052" }`),
 			negative: true,
-			err:      ErrorParseFile,
+			err:      ErrParseFile,
 		},
 
 		{
@@ -59,12 +60,12 @@ func TestScrapperConfig(t *testing.T) {
 			name:     "read error: file missing",
 			init:     func(testFs afero.Fs) { testFs.Name() },
 			negative: true,
-			err:      ErrorReadFile,
+			err:      ErrReadFile,
 		},
 	}
 
 	for _, tc := range testCases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -74,12 +75,12 @@ func TestScrapperConfig(t *testing.T) {
 			cfg, err := NewScrapperConfig(testFs)
 
 			if tc.negative {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.EqualError(t, err, tc.err.Error())
 				return
 			}
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tc.expected, cfg)
 		})
 	}
