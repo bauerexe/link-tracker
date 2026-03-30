@@ -57,13 +57,13 @@ func TestBot_runRest_listenCalled(t *testing.T) {
 	oldRegister := RegisterBotGateway
 	oldExit := ExitFn
 	oldNetListen := NetListen
-	oldHTTPServe := HttpServe
+	oldHTTPServe := HTTPServe
 
 	defer func() {
 		RegisterBotGateway = oldRegister
 		ExitFn = oldExit
 		NetListen = oldNetListen
-		HttpServe = oldHTTPServe
+		HTTPServe = oldHTTPServe
 	}()
 
 	ExitFn = func(_ int) {}
@@ -86,7 +86,7 @@ func TestBot_runRest_listenCalled(t *testing.T) {
 		return ln, nil
 	}
 
-	HttpServe = func(gotLn net.Listener, _ http.Handler) error {
+	HTTPServe = func(gotLn net.Listener, _ http.Handler) error {
 		serveCalled = true
 		if gotLn != ln {
 			t.Fatalf("unexpected listener passed to HttpServe")

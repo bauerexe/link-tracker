@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 )
@@ -34,19 +35,23 @@ func TestChatRepository_CreateChat(t *testing.T) {
 			err:  context.DeadlineExceeded,
 		},
 	}
+
 	rp := NewChatRepository()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			chat, err := rp.CreateChat(ctx, tc.id)
-			if err != nil {
-				assert.ErrorIs(t, err, tc.err)
-			} else if tc.err == nil {
-				assert.Equal(t, chat.ID, tc.id)
-			} else {
-				assert.Error(t, err)
+
+			switch {
+			case tc.err != nil:
+				require.ErrorIs(t, err, tc.err)
+			default:
+				require.NoError(t, err)
+				require.Equal(t, tc.id, chat.ID)
 			}
+
 			time.Sleep(time.Millisecond * 51)
 		})
 	}
@@ -82,24 +87,23 @@ func TestChatRepository_DeleteChatByID(t *testing.T) {
 	ctxPrep, cancel1 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel1()
 	_, err := rp.CreateChat(ctxPrep, 123)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chat, err := rp.DeleteChatByID(ctx, tc.id)
-			if err != nil {
-				assert.ErrorIs(t, err, tc.err)
-				return
-			}
+			var chat *domain.Chat
+			chat, err = rp.DeleteChatByID(ctx, tc.id)
 
-			if tc.err == nil {
-				assert.Equal(t, tc.id, chat.ID)
-				return
+			switch {
+			case tc.err != nil:
+				require.ErrorIs(t, err, tc.err)
+			default:
+				require.NoError(t, err)
+				require.Equal(t, tc.id, chat.ID)
 			}
-
-			assert.Error(t, err)
 		})
 
 		time.Sleep(time.Millisecond * 51)
@@ -136,24 +140,23 @@ func TestChatRepository_GetChatByID(t *testing.T) {
 	ctxPrep, cancel1 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel1()
 	_, err := rp.CreateChat(ctxPrep, 123)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chat, err := rp.GetChatByID(ctx, tc.id)
-			if err != nil {
-				assert.ErrorIs(t, err, tc.err)
-				return
-			}
+			var chat *domain.Chat
+			chat, err = rp.GetChatByID(ctx, tc.id)
 
-			if tc.err == nil {
-				assert.Equal(t, tc.id, chat.ID)
-				return
+			switch {
+			case tc.err != nil:
+				require.ErrorIs(t, err, tc.err)
+			default:
+				require.NoError(t, err)
+				require.Equal(t, tc.id, chat.ID)
 			}
-
-			assert.Error(t, err)
 		})
 
 		time.Sleep(time.Millisecond * 51)

@@ -19,12 +19,12 @@ type ScrapperConfig struct {
 func NewScrapperConfig(fs afero.Fs) (ScrapperConfig, error) {
 	file, err := afero.ReadFile(fs, envFile)
 	if err != nil {
-		return ScrapperConfig{}, ErrorReadFile
+		return ScrapperConfig{}, ErrReadFile
 	}
 
 	tree, err := parse.ParseBytes(file)
 	if err != nil {
-		return ScrapperConfig{}, ErrorParseFile
+		return ScrapperConfig{}, ErrParseFile
 	}
 
 	cfg := &ScrapperConfig{}

@@ -1,4 +1,4 @@
-package scrapper_controller
+package scrappercontroller
 
 import (
 	"context"
@@ -16,14 +16,16 @@ func (a *api) CreateChat(ctx context.Context, req *pbv1.CreateChatRequest) (*pbv
 	if err := req.ValidateAll(); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "validation failed: %v", err)
 	}
+
 	createdChat, err := a.chatRepository.CreateChat(ctx, req.Id)
 	if err != nil {
 		if errors.Is(err, usecase.ErrChatAlreadyExist) {
-			return nil, status.Error(codes.AlreadyExists, err.Error())
+			return nil, status.Errorf(codes.AlreadyExists, "%s", err.Error())
 		}
 		a.log.Error("create chat failed", zap.Error(err))
-		return nil, status.Error(codes.Internal, "internal error")
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
+
 	return &pbv1.ChatResponse{Id: createdChat.ID}, nil
 }
 
@@ -31,13 +33,15 @@ func (a *api) DeleteChat(ctx context.Context, req *pbv1.DeleteChatRequest) (*pbv
 	if err := req.ValidateAll(); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "validation failed: %v", err)
 	}
+
 	deletedChat, err := a.chatRepository.DeleteChatByID(ctx, req.Id)
 	if err != nil {
 		if errors.Is(err, usecase.ErrChatNotFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
+			return nil, status.Errorf(codes.NotFound, "%s", err.Error())
 		}
 		a.log.Error("delete chat failed", zap.Error(err))
-		return nil, status.Error(codes.Internal, "internal error")
+		return nil, status.Errorf(codes.Internal, "internal error")
 	}
+
 	return &pbv1.ChatResponse{Id: deletedChat.ID}, nil
 }

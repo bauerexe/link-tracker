@@ -20,9 +20,14 @@ type StackOverflowChecker struct {
 	log        *zap.Logger
 }
 
+const (
+	stackoverflowHTTPTimeout       = 10 * time.Second
+	stackOverflowQuestionMatchSize = 2
+)
+
 func NewStackOverflowChecker(httpClient *http.Client, key string, log *zap.Logger) *StackOverflowChecker {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		httpClient = &http.Client{Timeout: stackoverflowHTTPTimeout}
 	}
 	return &StackOverflowChecker{
 		httpClient: httpClient,
@@ -44,7 +49,7 @@ func (c *StackOverflowChecker) Check(ctx context.Context, url string, since time
 		zap.Bool("has_key", c.key != ""),
 	)
 	m := c.questionRe.FindStringSubmatch(url)
-	if len(m) < 2 {
+	if len(m) < stackOverflowQuestionMatchSize {
 		return "", time.Time{}, false, fmt.Errorf("invalid stackoverflow url: %s", url)
 	}
 	qID := m[1]
@@ -56,14 +61,18 @@ func (c *StackOverflowChecker) Check(ctx context.Context, url string, since time
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return "", time.Time{}, false, err
+		return "", time.Time{}, false, fmt.Errorf("create request: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", time.Time{}, false, err
+		return "", time.Time{}, false, fmt.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			c.log.Warn("failed to close response body", zap.Error(cerr))
+		}
+	}()
 
 	c.log.Debug("stackexchange response",
 		zap.Int("status", resp.StatusCode),
@@ -81,9 +90,12 @@ func (c *StackOverflowChecker) Check(ctx context.Context, url string, since time
 			LastActivityDate int64  `json:"last_activity_date"`
 		} `json:"items"`
 	}
-	if err = json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return "", time.Time{}, false, err
+
+	decodeErr := json.NewDecoder(resp.Body).Decode(&r)
+	if decodeErr != nil {
+		return "", time.Time{}, false, fmt.Errorf("decode response: %w", decodeErr)
 	}
+
 	if len(r.Items) == 0 {
 		return "", time.Time{}, false, fmt.Errorf("question not found: %s", url)
 	}

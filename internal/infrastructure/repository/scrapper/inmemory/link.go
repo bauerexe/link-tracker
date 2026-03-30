@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -11,8 +12,8 @@ import (
 
 type LinkRepository struct {
 	mu         sync.RWMutex
-	idUrlLinks map[int64]map[string]*domain.Link
-	urlIdLinks map[string]map[int64]*domain.Link
+	idURLLinks map[int64]map[string]*domain.Link
+	urlIDLinks map[string]map[int64]*domain.Link
 	urlState   map[string]domain.URLState
 	curID      int64
 }
@@ -20,15 +21,10 @@ type LinkRepository struct {
 // NewLinkRepository - return inmemory implementation of scrapper.LinkRepository
 func NewLinkRepository() usecase.LinkRepository {
 	return &LinkRepository{
-		idUrlLinks: make(map[int64]map[string]*domain.Link),
-		urlIdLinks: make(map[string]map[int64]*domain.Link),
+		idURLLinks: make(map[int64]map[string]*domain.Link),
+		urlIDLinks: make(map[string]map[int64]*domain.Link),
 		urlState:   make(map[string]domain.URLState),
 	}
-}
-
-func (l *LinkRepository) nextID() int64 {
-	l.curID++
-	return l.curID
 }
 
 func (l *LinkRepository) CreateLink(
@@ -39,18 +35,18 @@ func (l *LinkRepository) CreateLink(
 ) (*domain.Link, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("create link: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if _, ok := l.idUrlLinks[chatID]; !ok {
-		l.idUrlLinks[chatID] = make(map[string]*domain.Link)
+	if _, ok := l.idURLLinks[chatID]; !ok {
+		l.idURLLinks[chatID] = make(map[string]*domain.Link)
 	}
 
-	if _, exists := l.idUrlLinks[chatID][url]; exists {
+	if _, exists := l.idURLLinks[chatID][url]; exists {
 		return nil, usecase.ErrLinkAlreadyTracked
 	}
 
@@ -61,12 +57,12 @@ func (l *LinkRepository) CreateLink(
 		Filters: append([]string(nil), filters...),
 	}
 
-	l.idUrlLinks[chatID][url] = link
+	l.idURLLinks[chatID][url] = link
 
-	if _, ok := l.urlIdLinks[url]; !ok {
-		l.urlIdLinks[url] = make(map[int64]*domain.Link)
+	if _, ok := l.urlIDLinks[url]; !ok {
+		l.urlIDLinks[url] = make(map[int64]*domain.Link)
 	}
-	l.urlIdLinks[url][chatID] = link
+	l.urlIDLinks[url][chatID] = link
 
 	return link, nil
 }
@@ -74,14 +70,14 @@ func (l *LinkRepository) CreateLink(
 func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]*domain.Link, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("get links by chat id: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	chatLinks, ok := l.idUrlLinks[chatID]
+	chatLinks, ok := l.idURLLinks[chatID]
 	if !ok {
 		return []*domain.Link{}, usecase.ErrChatNotFound
 	}
@@ -103,14 +99,14 @@ func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 func (l *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url string) (*domain.Link, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("delete link: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	chatLinks, ok := l.idUrlLinks[chatID]
+	chatLinks, ok := l.idURLLinks[chatID]
 	if !ok {
 		return nil, usecase.ErrChatNotFound
 	}
@@ -122,13 +118,14 @@ func (l *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 
 	delete(chatLinks, url)
 	if len(chatLinks) == 0 {
-		delete(l.idUrlLinks, chatID)
+		delete(l.idURLLinks, chatID)
 	}
 
-	if m, ok := l.urlIdLinks[url]; ok {
+	m, existsURL := l.urlIDLinks[url]
+	if existsURL {
 		delete(m, chatID)
 		if len(m) == 0 {
-			delete(l.urlIdLinks, url)
+			delete(l.urlIDLinks, url)
 			delete(l.urlState, url)
 		}
 	}
@@ -139,15 +136,15 @@ func (l *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 func (l *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("list links: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	urls := make([]string, 0, len(l.urlIdLinks))
-	for url := range l.urlIdLinks {
+	urls := make([]string, 0, len(l.urlIDLinks))
+	for url := range l.urlIDLinks {
 		urls = append(urls, url)
 	}
 	sort.Strings(urls)
@@ -165,14 +162,14 @@ func (l *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 func (l *LinkRepository) GetChatIDsByLink(ctx context.Context, url string) ([]int64, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("get chat ids by link: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	m, ok := l.urlIdLinks[url]
+	m, ok := l.urlIDLinks[url]
 	if !ok || len(m) == 0 {
 		return nil, usecase.ErrLinkNotFound
 	}
@@ -189,7 +186,7 @@ func (l *LinkRepository) GetChatIDsByLink(ctx context.Context, url string) ([]in
 func (l *LinkRepository) GetURLState(ctx context.Context, url string) (domain.URLState, error) {
 	select {
 	case <-ctx.Done():
-		return domain.URLState{}, ctx.Err()
+		return domain.URLState{}, fmt.Errorf("get url state: context done: %w", ctx.Err())
 	default:
 	}
 
@@ -206,17 +203,22 @@ func (l *LinkRepository) GetURLState(ctx context.Context, url string) (domain.UR
 func (l *LinkRepository) SetURLState(ctx context.Context, url string, st domain.URLState) error {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("set url state: context done: %w", ctx.Err())
 	default:
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if _, ok := l.urlIdLinks[url]; !ok {
+	if _, ok := l.urlIDLinks[url]; !ok {
 		return usecase.ErrLinkNotFound
 	}
 
 	l.urlState[url] = st
 	return nil
+}
+
+func (l *LinkRepository) nextID() int64 {
+	l.curID++
+	return l.curID
 }

@@ -27,13 +27,17 @@ func main() {
 	app := fx.New(
 		fx.Provide(
 			newZap,
+			newCtx,
 			newConfig,
+			newScrapperConn,
+			newScrapperClient,
+			newBotServer,
 			newRouter,
 			newBotRepo,
 			newBotUsecase,
 		),
 		fx.Invoke(
-			tgBotApiDiscard,
+			tgBotAPIDiscard,
 			runBot,
 		),
 	)
@@ -58,7 +62,7 @@ func newZap() (*zap.Logger, error) {
 
 	log, err := cfg.Build()
 	if err != nil {
-		return nil, fmt.Errorf("bot zap build: %w", err)
+		return nil, fmt.Errorf("build logger: %w", err)
 	}
 
 	log = log.Named("bot").With(zap.String("service", "bot"))
@@ -75,7 +79,7 @@ func newScrapperConn(lc fx.Lifecycle, cfg config.BotConfig, log *zap.Logger) (*g
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create scrapper grpc client: %w", err)
 	}
 
 	log.Info("connected to scrapper", zap.String("addr", cfg.ScrapperAddrGRPC))
@@ -101,39 +105,57 @@ func newRouter(ctx context.Context, client pbv1.ScrapperClient) *botapp.BotDispa
 		botapp.CommandTrack:   handlers.NewTrackHandler(ctx, client),
 		botapp.CommandUntrack: handlers.NewUntrackHandler(ctx, client),
 		botapp.CommandList:    handlers.NewListHandler(ctx, client),
-	},
-	)
+	})
 }
 
 func newBotServer(log *zap.Logger, repo botapp.BotGateway) pbv1.BotServer {
 	return botcontroller.New(log.With(zap.String("layer", "controller")), repo)
 }
 
-func newBotRepo(cfg config.BotConfig,
-	log *zap.Logger,
-) (botapp.BotGateway, error) {
+func newBotRepo(cfg config.BotConfig, log *zap.Logger) (botapp.BotGateway, error) {
 	if cfg.TelegramDisabled {
 		log.Info("telegram disabled by BOT_DISABLE_TELEGRAM; using noop gateway")
 		return botrepo.NewDummy(log.With(zap.String("layer", "infrastructure")).Named("telegram.noop")), nil
 	}
-	return botrepo.New(cfg.TokenTGBot, log.With(zap.String("layer", "infrastructure")).Named("telegram"),
+
+	repo, err := botrepo.New(
+		cfg.TokenTGBot,
+		log.With(zap.String("layer", "infrastructure")).Named("telegram"),
 		[]tgbotapi.BotCommand{
 			{Command: "help", Description: "помощь"},
 			{Command: "start", Description: "старт"},
 			{Command: "track", Description: "отслеживание ссылки"},
 			{Command: "untrack", Description: "прекращение отслеживания"},
 			{Command: "list", Description: "список отслеживаемых ссылок"},
-		})
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create bot repository: %w", err)
+	}
+
+	return repo, nil
 }
 
-func newBotUsecase(cfg config.BotConfig,
+func newBotUsecase(
+	cfg config.BotConfig,
 	repo botapp.BotGateway,
 	server pbv1.BotServer,
 	router *botapp.BotDispatcher,
 	log *zap.Logger,
 ) (*botapp.Bot, error) {
-	return botapp.NewBot(cfg.TokenTGBot, repo, server, router,
-		log.With(zap.String("layer", "application")).Named("usecase.bot"), &cfg)
+	bot, err := botapp.NewBot(
+		cfg.TokenTGBot,
+		repo,
+		server,
+		router,
+		log.With(zap.String("layer", "application")).Named("usecase.bot"),
+		&cfg,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create bot usecase: %w", err)
+	}
+
+	return bot, nil
 }
 
 func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
@@ -179,6 +201,6 @@ func runBot(lc fx.Lifecycle, bot *botapp.Bot, log *zap.Logger) {
 	})
 }
 
-func tgBotApiDiscard() {
+func tgBotAPIDiscard() {
 	_ = tgbotapi.SetLogger(stdlog.New(io.Discard, "", 0))
 }

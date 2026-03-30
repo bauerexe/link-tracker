@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,264 +21,312 @@ func TestEndToEnd(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("testcontainers rootless Docker is not supported on Windows")
 	}
+
 	env := mustStartE2EEnv(t)
 	defer env.Close(t)
 
 	t.Run("Test1_Bot_CorrectUpdate_2000", func(t *testing.T) {
-		body := map[string]any{
-			"id":          int64(1),
-			"url":         "https://github.com/example/repo",
-			"description": "desc",
-			"tgChatIds":   []int64{1},
-		}
-
-		resp, err := env.doJSON("POST", env.BotBaseURL+"/updates", nil, body)
-		if err != nil {
-			env.DumpLogs(t)
-			t.Fatal(err)
-		}
-		mustNoErr(t, err)
-		defer func(Body io.ReadCloser) {
-			_ = Body.Close()
-		}(resp.Body)
-
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
-		}
+		testBotCorrectUpdate2000(t, env)
 	})
 
 	t.Run("Test2_Bot_IncorrectUpdate_Not200", func(t *testing.T) {
-		body := map[string]any{
-			"id":        "oops",
-			"url":       "not-a-uri",
-			"tgChatIds": "also-wrong-type",
-		}
-
-		resp, err := env.doJSON("POST", env.BotBaseURL+"/updates", nil, body)
-		mustNoErr(t, err)
-		defer func(Body io.ReadCloser) {
-			_ = Body.Close()
-		}(resp.Body)
-
-		if resp.StatusCode == http.StatusOK {
-			t.Fatalf("expected non-200, got 200")
-		}
+		testBotIncorrectUpdateNot200(t, env)
 	})
 
 	t.Run("Test3_1_Scrapper_AddAndGetLink", func(t *testing.T) {
-		chatID := int64(101)
-
-		resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		link := "https://stackoverflow.com/questions/1"
-		addReq := map[string]any{
-			"link":    link,
-			"tags":    []string{"tag1"},
-			"filters": []string{"filter1"},
-		}
-
-		resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, addReq)
-		mustNoErr(t, err)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		var list struct {
-			Links []LinkItem `json:"links"`
-			Size  int        `json:"size"`
-		}
-		resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, nil)
-		mustNoErr(t, err)
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-		mustDecodeJSON(t, resp, &list)
-
-		if !containsURL(list.Links, link) {
-			t.Fatalf("expected link %q to still exist, got %+v", link, list.Links)
-		}
+		testScrapperAddAndGetLink(t, env)
 	})
 
 	t.Run("Test3_2_Scrapper_AddThenDeleteLink", func(t *testing.T) {
-		chatID := int64(102)
-		link := "https://github.com/golang/go"
-
-		resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, map[string]any{
-			"chatId": chatID,
-			"link":   link,
-		})
-		mustNoErr(t, err)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("DELETE", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, map[string]any{
-			"chat_id": chatID,
-			"link":    link,
-		})
-		mustNoErr(t, err)
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(resp.Body)
-			t.Fatalf("expected 200, got %d, body=%s", resp.StatusCode, string(b))
-		}
-
-		var list struct {
-			Links []LinkItem `json:"links"`
-			Size  int        `json:"size"`
-		}
-		resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, nil)
-		mustNoErr(t, err)
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			b, _ := io.ReadAll(resp.Body)
-			t.Fatalf("GET /links expected 200, got %d, body=%s", resp.StatusCode, string(b))
-		}
-		mustDecodeJSON(t, resp, &list)
-
-		if containsURL(list.Links, link) {
-			t.Fatalf("expected link %q to be removed, got %+v", link, list.Links)
-		}
+		testScrapperAddThenDeleteLink(t, env)
 	})
 
 	t.Run("Test3_3_Scrapper_DeleteFromNonexistentChat_Not200_AndLinkStillThere", func(t *testing.T) {
-		chatID := int64(103)
-		link := "https://example.com"
-
-		resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, map[string]any{"link": link})
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("DELETE", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": "999",
-		}, map[string]any{"link": link})
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			t.Fatalf("expected non-200, got 200")
-		}
-
-		var list struct {
-			Links []LinkItem `json:"links"`
-			Size  int        `json:"size"`
-		}
-		resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, nil)
-		mustNoErr(t, err)
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-		mustDecodeJSON(t, resp, &list)
-
-		if !containsURL(list.Links, link) {
-			t.Fatalf("expected link %q to still exist, got %+v", link, list.Links)
-		}
+		testScrapperDeleteFromNonexistentChatNot200AndLinkStillThere(t, env)
 	})
 
 	t.Run("Test3_4_Scrapper_AddLinkToNonexistentChat_Not200", func(t *testing.T) {
-		chatID := int64(104)
-
-		resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": "2",
-		}, map[string]any{"link": "https://example.org"})
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			t.Fatalf("expected non-200, got 200")
-		}
+		testScrapperAddLinkToNonexistentChatNot200(t, env)
 	})
 
 	t.Run("Test3_5_Scrapper_DeletedChat_CannotAddLink", func(t *testing.T) {
-		chatID := int64(105)
-
-		resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doNoBody("DELETE", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected 200, got %d", resp.StatusCode)
-		}
-
-		resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
-			"Tg-Chat-Id": fmt.Sprintf("%d", chatID),
-		}, map[string]any{"link": "https://example.net"})
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			t.Fatalf("expected non-200, got 200")
-		}
+		testScrapperDeletedChatCannotAddLink(t, env)
 	})
 
 	t.Run("Test3_6_Scrapper_DeleteNonexistentChat_404", func(t *testing.T) {
-		chatID := int64(999999)
-		resp, err := env.doNoBody("DELETE", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID), nil)
-		mustNoErr(t, err)
-		_ = resp.Body.Close()
-
-		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("expected 404 Not Found, got %d", resp.StatusCode)
-		}
+		testScrapperDeleteNonexistentChat404(t, env)
 	})
 }
 
+func testBotCorrectUpdate2000(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	body := map[string]any{
+		"id":          int64(1),
+		"url":         "https://github.com/example/repo",
+		"description": "desc",
+		"tgChatIds":   []int64{1},
+	}
+
+	resp, err := env.doJSON("POST", env.BotBaseURL+"/updates", nil, body)
+	if err != nil {
+		env.DumpLogs(t)
+		t.Fatal(err)
+	}
+	mustNoErr(t, err)
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+}
+
+func testBotIncorrectUpdateNot200(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	body := map[string]any{
+		"id":        "oops",
+		"url":       "not-a-uri",
+		"tgChatIds": "also-wrong-type",
+	}
+
+	resp, err := env.doJSON("POST", env.BotBaseURL+"/updates", nil, body)
+	mustNoErr(t, err)
+	defer func(body io.ReadCloser) {
+		_ = body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("expected non-200, got 200")
+	}
+}
+
+func testScrapperAddAndGetLink(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(101)
+
+	resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	link := "https://stackoverflow.com/questions/1"
+	addReq := map[string]any{
+		"link":    link,
+		"tags":    []string{"tag1"},
+		"filters": []string{"filter1"},
+	}
+
+	resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, addReq)
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var list struct {
+		Links []LinkItem `json:"links"`
+		Size  int        `json:"size"`
+	}
+	resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, nil)
+	mustNoErr(t, err)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	mustDecodeJSON(t, resp, &list)
+
+	if !containsURL(list.Links, link) {
+		t.Fatalf("expected link %q to still exist, got %+v", link, list.Links)
+	}
+}
+
+func testScrapperAddThenDeleteLink(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(102)
+	link := "https://github.com/golang/go"
+
+	resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, map[string]any{
+		"chatId": chatID,
+		"link":   link,
+	})
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("DELETE", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, map[string]any{
+		"chat_id": chatID,
+		"link":    link,
+	})
+	mustNoErr(t, err)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d, body=%s", resp.StatusCode, string(b))
+	}
+
+	var list struct {
+		Links []LinkItem `json:"links"`
+		Size  int        `json:"size"`
+	}
+	resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, nil)
+	mustNoErr(t, err)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /links expected 200, got %d, body=%s", resp.StatusCode, string(b))
+	}
+	mustDecodeJSON(t, resp, &list)
+
+	if containsURL(list.Links, link) {
+		t.Fatalf("expected link %q to be removed, got %+v", link, list.Links)
+	}
+}
+
+func testScrapperDeleteFromNonexistentChatNot200AndLinkStillThere(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(103)
+	link := "https://example.com"
+
+	resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, map[string]any{"link": link})
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("DELETE", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": "999",
+	}, map[string]any{"link": link})
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("expected non-200, got 200")
+	}
+
+	var list struct {
+		Links []LinkItem `json:"links"`
+		Size  int        `json:"size"`
+	}
+	resp, err = env.doJSON("GET", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, nil)
+	mustNoErr(t, err)
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	mustDecodeJSON(t, resp, &list)
+
+	if !containsURL(list.Links, link) {
+		t.Fatalf("expected link %q to still exist, got %+v", link, list.Links)
+	}
+}
+
+func testScrapperAddLinkToNonexistentChatNot200(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(104)
+
+	resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": "2",
+	}, map[string]any{"link": "https://example.org"})
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("expected non-200, got 200")
+	}
+}
+
+func testScrapperDeletedChatCannotAddLink(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(105)
+
+	resp, err := env.doNoBody("POST", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doNoBody("DELETE", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, err = env.doJSON("POST", env.ScrapperBaseURL+"/links", map[string]string{
+		"Tg-Chat-Id": strconv.FormatInt(chatID, 10),
+	}, map[string]any{"link": "https://example.net"})
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("expected non-200, got 200")
+	}
+}
+
+func testScrapperDeleteNonexistentChat404(t *testing.T, env *e2eEnv) {
+	t.Helper()
+
+	chatID := int64(999999)
+	resp, err := env.doNoBody("DELETE", fmt.Sprintf("%s/tg-chat/%d", env.ScrapperBaseURL, chatID))
+	mustNoErr(t, err)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", resp.StatusCode)
+	}
+}
 func mustStartE2EEnv(t *testing.T) *e2eEnv {
 	t.Helper()
 

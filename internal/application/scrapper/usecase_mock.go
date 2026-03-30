@@ -7,7 +7,7 @@
 //
 
 // Package scrapper_app is a generated GoMock package.
-package scrapper_app
+package scrapperapp
 
 import (
 	context "context"

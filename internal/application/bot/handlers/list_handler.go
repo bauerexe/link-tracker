@@ -61,13 +61,13 @@ func (h *ListHandler) Handle(chatID int64, args string) (string, error) {
 
 	var b strings.Builder
 	if tag != "" {
-		b.WriteString(fmt.Sprintf("Ссылки с тегом %q:\n", tag))
+		fmt.Fprintf(&b, "Ссылки с тегом %q:\n", tag)
 	} else {
 		b.WriteString("Отслеживаемые ссылки:\n")
 	}
 
 	for i, l := range filtered {
-		b.WriteString(fmt.Sprintf("%d) %s\n", i+1, l.GetUrl()))
+		fmt.Fprintf(&b, "%d) %s\n", i+1, l.GetUrl())
 	}
 
 	return strings.TrimRight(b.String(), "\n"), nil

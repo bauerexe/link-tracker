@@ -1,4 +1,4 @@
-package scrapper_app
+package scrapperapp
 
 import (
 	"context"
@@ -29,5 +29,5 @@ func (n *GRPCBotNotifier) Notify(ctx context.Context, url, description string, c
 	if err != nil && n.log != nil {
 		n.log.Error("UpdateLink failed", zap.Error(err))
 	}
-	return err
+	return nil
 }

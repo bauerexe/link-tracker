@@ -3,6 +3,7 @@ package botapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -41,7 +42,7 @@ type Bot struct {
 var (
 	NetListen          = net.Listen
 	ExitFn             = os.Exit
-	HttpServe          = http.Serve
+	HTTPServe          = http.Serve
 	RegisterBotGateway = pbv1.RegisterBotHandlerFromEndpoint
 	NewGrpcServer      = grpc.NewServer
 )
@@ -77,12 +78,12 @@ func NewBot(token string, botRepository BotGateway, server pbv1.BotServer, route
 // Run - run service tg bot and servers for handle requests from scrapper
 func (b *Bot) Run(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return fmt.Errorf("run bot: context error: %w", err)
 	}
 	updates, err := b.botRepository.GetMessages(ctx, timeoutSec)
 	if err != nil {
 		b.log.Error("failed to get messages", zap.Error(err))
-		return err
+		return fmt.Errorf("run bot: get messages: %w", err)
 	}
 
 	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -104,10 +105,11 @@ func (b *Bot) Run(ctx context.Context) error {
 			if err = b.waitWithTimeout(gracefulStopTimeout); err != nil {
 				b.log.Warn("bot shutdown finished with timeout", zap.Error(err))
 			}
-			return sigCtx.Err()
+			return fmt.Errorf("run bot: shutdown signal: %w", sigCtx.Err())
 		case upd, ok := <-updates:
-			cont, err := b.handleIncomingMessage(upd, ok)
-			if err != nil && !errors.Is(err, ErrorUnknownCommand) {
+			var cont bool
+			cont, err = b.handleIncomingMessage(upd, ok)
+			if err != nil && !errors.Is(err, ErrUnknownCommand) {
 				b.log.Error("failed to handle incoming message", zap.Error(err))
 			}
 			if !cont {
@@ -155,7 +157,7 @@ func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message) error {
 
 	replyText, err := b.router.Dispatch(upd, cmd, args)
 	if err != nil {
-		if errors.Is(err, ErrorUnknownCommand) {
+		if errors.Is(err, ErrUnknownCommand) {
 			replyText = "Не знаю команду " + cmd.String() + ". Напиши /help"
 		} else {
 			logger.Error(
@@ -169,9 +171,10 @@ func (b *Bot) processMessage(logger *zap.Logger, upd domain.Message) error {
 
 	logger.Info("bot dispatched message to reply", zap.String("reply", replyText))
 
-	if err := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText); err != nil {
-		logger.Error("error send message", zap.Error(err))
-		return err
+	sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
+	if sendErr != nil {
+		logger.Error("error send message", zap.Error(sendErr))
+		return fmt.Errorf("process message: send reply: %w", sendErr)
 	}
 
 	logger.Info("bot sent reply message to user", zap.String("reply", replyText))
@@ -210,7 +213,7 @@ func (b *Bot) runRest(ctx context.Context) {
 
 	b.log.Info("gateway listening at port", zap.String("port", b.cfg.BotAddrHTTP))
 
-	if err = HttpServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err = HTTPServe(ln, mux); err != nil && !errors.Is(err, net.ErrClosed) {
 		b.log.Error("gateway serve error", zap.Error(err))
 	}
 }
@@ -256,6 +259,9 @@ func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message) (bool, e
 	}
 
 	switch step {
+	case trackIdle:
+		return false, nil
+
 	case trackWaitURL:
 		return b.handleTrackWaitURL(logger, upd)
 
@@ -279,7 +285,12 @@ func (b *Bot) startTrackDialog(logger *zap.Logger, upd domain.Message) (bool, er
 
 	reply := "Пришли ссылку для отслеживания. /cancel чтобы отменить."
 	logger.Info("track dialog started")
-	return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+	sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+	if sendErr != nil {
+		return true, fmt.Errorf("start track dialog: send message: %w", sendErr)
+	}
+
+	return true, nil
 }
 
 func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message) (bool, error) {
@@ -292,11 +303,21 @@ func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message)
 		replyText, err := b.router.Dispatch(upd, "track", url)
 		if err != nil {
 			logger.Error("track dispatch failed", zap.Error(err))
-			return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
+			sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
+			if sendErr != nil {
+				return true, fmt.Errorf("track control skip: send error message: %w", sendErr)
+			}
+
+			return true, nil
 		}
 
 		logger.Info("track dialog completed", zap.String("url", url), zap.Int("tags_n", 0))
-		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
+		sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
+		if sendErr != nil {
+			return true, fmt.Errorf("track control skip: send reply: %w", sendErr)
+		}
+
+		return true, nil
 	}
 
 	if upd.Command == "cancel" {
@@ -306,7 +327,12 @@ func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message)
 
 		reply := "Ок, отменил."
 		logger.Info("track dialog cancelled")
-		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		if sendErr != nil {
+			return true, fmt.Errorf("track control cancel: send reply: %w", sendErr)
+		}
+
+		return true, nil
 	}
 
 	if strings.HasPrefix(upd.Text, "/") {
@@ -325,11 +351,21 @@ func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message) (bool, 
 	url := strings.TrimSpace(upd.Text)
 	if url == "" {
 		reply := "Ссылка пустая. Пришли ссылку или /cancel."
-		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		if sendErr != nil {
+			return true, fmt.Errorf("track wait url: send empty-url reply: %w", sendErr)
+		}
+
+		return true, nil
 	}
 	if _, ok := handlers.NormalizeURL(url); !ok {
 		reply := "Некорректная ссылка. Пример: https://example.com"
-		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+		if sendErr != nil {
+			return true, fmt.Errorf("track wait url: send invalid-url reply: %w", sendErr)
+		}
+
+		return true, nil
 	}
 
 	b.fsm.mu.Lock()
@@ -340,7 +376,12 @@ func (b *Bot) handleTrackWaitURL(logger *zap.Logger, upd domain.Message) (bool, 
 
 	reply := "Теперь теги (необязательно). Введи через запятую, или отправь /skip чтобы продолжить без тегов. /cancel чтобы отменить."
 	logger.Info("track dialog got url", zap.String("url", url))
-	return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+	sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, reply)
+	if sendErr != nil {
+		return true, fmt.Errorf("track wait url: send next-step reply: %w", sendErr)
+	}
+
+	return true, nil
 }
 
 func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message) (bool, error) {
@@ -359,11 +400,21 @@ func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message) (bool,
 	replyText, err := b.router.Dispatch(upd, "track", args)
 	if err != nil {
 		logger.Error("track dispatch failed", zap.Error(err))
-		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
+		sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
+		if sendErr != nil {
+			return true, fmt.Errorf("track wait tags: send error message: %w", sendErr)
+		}
+
+		return true, nil
 	}
 
 	logger.Info("track dialog completed", zap.String("url", url), zap.Int("tags_n", len(tags)))
-	return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
+	sendErr := b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
+	if sendErr != nil {
+		return true, fmt.Errorf("track wait tags: send reply: %w", sendErr)
+	}
+
+	return true, nil
 }
 
 func parseTagsCSV(s string) []string {

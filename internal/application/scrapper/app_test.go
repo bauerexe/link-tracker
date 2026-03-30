@@ -1,4 +1,4 @@
-package scrapper_app
+package scrapperapp
 
 import (
 	"context"
@@ -63,13 +63,13 @@ func TestScrapper_runRest_listenCalled(t *testing.T) {
 	oldRegister := RegisterScrapperGateway
 	oldExit := ExitFn
 	oldNetListen := NetListen
-	oldHTTPServe := HttpServe
+	oldHTTPServe := HTTPServe
 
 	defer func() {
 		RegisterScrapperGateway = oldRegister
 		ExitFn = oldExit
 		NetListen = oldNetListen
-		HttpServe = oldHTTPServe
+		HTTPServe = oldHTTPServe
 	}()
 
 	ExitFn = func(_ int) {}
@@ -92,10 +92,10 @@ func TestScrapper_runRest_listenCalled(t *testing.T) {
 		return ln, nil
 	}
 
-	HttpServe = func(gotLn net.Listener, _ http.Handler) error {
+	HTTPServe = func(gotLn net.Listener, _ http.Handler) error {
 		serveCalled = true
 		if gotLn != ln {
-			t.Fatalf("unexpected listener passed to HttpServe")
+			t.Fatalf("unexpected listener passed to HTTPServe")
 		}
 		return errors.New("serve error")
 	}
@@ -114,7 +114,7 @@ func TestScrapper_runRest_listenCalled(t *testing.T) {
 		t.Fatalf("expected NetListen called with tcp localhost:8080, got network=%q addr=%q", gotNetwork, gotAddr)
 	}
 	if !serveCalled {
-		t.Fatalf("expected HttpServe to be called")
+		t.Fatalf("expected HTTPServe to be called")
 	}
 }
 
@@ -377,7 +377,7 @@ func TestScheduler_CheckerErrors_TableDriven(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeLinksRepo{
 				links: []*domain.Link{

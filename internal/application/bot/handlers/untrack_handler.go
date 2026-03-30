@@ -36,7 +36,8 @@ func (h *UntrackHandler) Handle(chatID int64, args string) (string, error) {
 		Link:   link,
 	})
 	if err != nil {
-		st, ok := status.FromError(err)
+		var st *status.Status
+		st, ok = status.FromError(err)
 		if ok && st.Code() == codes.NotFound {
 			return "Ссылка не отслеживается", nil
 		}

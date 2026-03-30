@@ -59,7 +59,7 @@ func TestNewBot(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -186,18 +186,15 @@ func newBufconnScrapperClient(t *testing.T, srv pbv1.ScrapperServer) (pbv1.Scrap
 	return pbv1.NewScrapperClient(conn), cleanup
 }
 
-/*
-Тесты, которые просились в тз. Не знаю как их выделить иначе кроме комента этого
-*/
+type step struct {
+	text    string
+	command string
+	args    string
+}
+
 func TestBot_Track_And_List_TableDriven(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-
-	type step struct {
-		text    string
-		command string
-		args    string
-	}
 
 	tests := []struct {
 		name        string
@@ -309,68 +306,92 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			botGw := &fakeBotGateway{}
-			srv := &scrapperTestServer{}
-			if tt.scrapperCfg != nil {
-				tt.scrapperCfg(srv)
-			}
-
-			client, cleanup := newBufconnScrapperClient(t, srv)
-			defer cleanup()
-
-			router := NewBotDispatcher(map[domain.Command]domain.Handler{
-				CommandTrack: handlers.NewTrackHandler(ctx, client),
-				CommandList:  handlers.NewListHandler(ctx, client),
-				CommandHelp:  handlers.NewHelpHandler(),
-				CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
-			})
-
-			b := &Bot{
-				botRepository: botGw,
-				server:        nil,
-				router:        router,
-				log:           zap.NewNop(),
-				cfg:           nil,
-				fsm:           newFSMStore(),
-			}
-
-			for i, st := range tt.steps {
-				_, err := b.handleIncomingMessage(domain.Message{
-					ChatID:    1,
-					MessageID: i + 1,
-					Text:      st.text,
-					Command:   domain.Command(st.command),
-					Arguments: st.args,
-				}, true)
-				if err != nil && !errors.Is(err, ErrUnknownCommand) {
-					t.Fatalf("step %d (%q) err: %v", i, st.text, err)
-				}
-			}
-
-			all := botGw.SentAll()
-			for _, sub := range tt.wantSubstr {
-				if !strings.Contains(all, sub) {
-					t.Fatalf("expected replies to contain %q, got:\n%s", sub, all)
-				}
-			}
-
-			calls := srv.CreateCalls()
-			if len(calls) != tt.wantCreates {
-				t.Fatalf("expected CreateLink calls=%d, got=%d", tt.wantCreates, len(calls))
-			}
-			if tt.wantCreates > 0 && tt.wantLink != "" {
-				if calls[0].GetLink() != tt.wantLink {
-					t.Fatalf("expected CreateLink link=%q, got=%q", tt.wantLink, calls[0].GetLink())
-				}
-			}
-			if tt.wantCreates > 0 && tt.wantTags != nil {
-				got := calls[0].GetTags()
-				if strings.Join(got, ",") != strings.Join(tt.wantTags, ",") {
-					t.Fatalf("expected CreateLink tags=%v, got=%v", tt.wantTags, got)
-				}
-			}
+			botGw, srv, b := newTrackListTestBot(ctx, t, tt.scrapperCfg)
+			runBotSteps(t, b, tt.steps)
+			assertBotRepliesContain(t, botGw.SentAll(), tt.wantSubstr)
+			assertCreateCalls(t, srv.CreateCalls(), tt.wantCreates, tt.wantLink, tt.wantTags)
 		})
+	}
+}
+
+func newTrackListTestBot(ctx context.Context, t *testing.T, scrapperCfg func(s *scrapperTestServer)) (*fakeBotGateway, *scrapperTestServer, *Bot) {
+	t.Helper()
+
+	botGw := &fakeBotGateway{}
+	srv := &scrapperTestServer{}
+	if scrapperCfg != nil {
+		scrapperCfg(srv)
+	}
+
+	client, cleanup := newBufconnScrapperClient(t, srv)
+	t.Cleanup(cleanup)
+
+	router := NewBotDispatcher(map[domain.Command]domain.Handler{
+		CommandTrack: handlers.NewTrackHandler(ctx, client),
+		CommandList:  handlers.NewListHandler(ctx, client),
+		CommandHelp:  handlers.NewHelpHandler(),
+		CommandStart: stubHandler{reply: "Привет! Я link-tracker бот. Напиши /help"},
+	})
+
+	b := &Bot{
+		botRepository: botGw,
+		server:        nil,
+		router:        router,
+		log:           zap.NewNop(),
+		cfg:           nil,
+		fsm:           newFSMStore(),
+	}
+
+	return botGw, srv, b
+}
+
+func runBotSteps(t *testing.T, b *Bot, steps []step) {
+	t.Helper()
+
+	for i, st := range steps {
+		_, err := b.handleIncomingMessage(domain.Message{
+			ChatID:    1,
+			MessageID: i + 1,
+			Text:      st.text,
+			Command:   domain.Command(st.command),
+			Arguments: st.args,
+		}, true)
+		if err != nil && !errors.Is(err, ErrUnknownCommand) {
+			t.Fatalf("step %d (%q) err: %v", i, st.text, err)
+		}
+	}
+}
+
+func assertBotRepliesContain(t *testing.T, all string, wantSubstr []string) {
+	t.Helper()
+
+	for _, sub := range wantSubstr {
+		if !strings.Contains(all, sub) {
+			t.Fatalf("expected replies to contain %q, got:\n%s", sub, all)
+		}
+	}
+}
+
+func assertCreateCalls(t *testing.T, calls []*pbv1.CreateLinkRequest, wantCreates int, wantLink string, wantTags []string) {
+	t.Helper()
+
+	if len(calls) != wantCreates {
+		t.Fatalf("expected CreateLink calls=%d, got=%d", wantCreates, len(calls))
+	}
+
+	if wantCreates == 0 {
+		return
+	}
+
+	if wantLink != "" && calls[0].GetLink() != wantLink {
+		t.Fatalf("expected CreateLink link=%q, got=%q", wantLink, calls[0].GetLink())
+	}
+
+	if wantTags != nil {
+		got := calls[0].GetTags()
+		if strings.Join(got, ",") != strings.Join(wantTags, ",") {
+			t.Fatalf("expected CreateLink tags=%v, got=%v", wantTags, got)
+		}
 	}
 }

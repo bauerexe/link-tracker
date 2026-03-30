@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	CommandStart domain.Command = "/start"
-	CommandHelp  domain.Command = "/help"
+	CommandStart   domain.Command = "/start"
+	CommandHelp    domain.Command = "/help"
+	CommandTrack   domain.Command = "track"
+	CommandUntrack domain.Command = "untrack"
+	CommandList    domain.Command = "list"
 )
 
 var ErrUnknownCommand = errors.New("error unknown command")

@@ -1,4 +1,4 @@
-package scrapper_controller
+package scrappercontroller
 
 import (
 	"go.uber.org/zap"

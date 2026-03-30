@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -19,6 +20,16 @@ import (
 	controller "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/grpc/scrapper"
 	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/inmemory"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
+)
+
+const (
+	httpDialTimeout           = 10 * time.Second
+	httpKeepAliveTimeout      = 30 * time.Second
+	httpMaxIdleConns          = 100
+	httpIdleConnTimeout       = 90 * time.Second
+	httpTLSHandshakeTimeout   = 10 * time.Second
+	httpClientTimeout         = 10 * time.Second
+	httpExpectContinueTimeout = 1 * time.Second
 )
 
 func main() {
@@ -60,7 +71,7 @@ func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
 	fs := afero.NewOsFs()
 	cfg, err := config.NewScrapperConfig(fs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load scrapper config: %w", err)
 	}
 	log.Info("init config")
 	return &cfg, nil
@@ -68,13 +79,12 @@ func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
 
 func newZap() (*zap.Logger, error) {
 	cfg := zap.NewProductionConfig()
-	// cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	cfg.EncoderConfig.TimeKey = "ts"
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	log, err := cfg.Build()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build logger: %w", err)
 	}
 
 	log = log.Named("scrapper").With(zap.String("service", "scrapper"))
@@ -93,25 +103,26 @@ func newScrapperServer(log *zap.Logger, chatRepo scrapperapp.ChatRepository, lin
 	return controller.New(log, chatRepo, linkRepo)
 }
 
-func newScrapperApp(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) scrapperapp.Scrapper {
-	return scrapperapp.New(server, log, cfg)
+func newScrapperApp(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) *scrapperapp.Scrapper {
+	app := scrapperapp.New(server, log, cfg)
+	return &app
 }
 
 func newHTTPClient(lc fx.Lifecycle, log *zap.Logger) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
+			Timeout:   httpDialTimeout,
+			KeepAlive: httpKeepAliveTimeout,
 		}).DialContext,
 		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          httpMaxIdleConns,
+		IdleConnTimeout:       httpIdleConnTimeout,
+		TLSHandshakeTimeout:   httpTLSHandshakeTimeout,
+		ExpectContinueTimeout: httpExpectContinueTimeout,
 	}
 	client := &http.Client{
-		Timeout:   10 * time.Second,
+		Timeout:   httpClientTimeout,
 		Transport: transport,
 	}
 
@@ -136,7 +147,7 @@ func newCheckers(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.L
 func newBotConn(lc fx.Lifecycle, cfg *config.ScrapperConfig, log *zap.Logger) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(cfg.BotAddrGRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create bot grpc client: %w", err)
 	}
 
 	lc.Append(fx.Hook{
@@ -166,16 +177,21 @@ func newScheduler(
 ) (*scrapperapp.Scheduler, error) {
 	interval := time.Duration(cfg.MinutesIntervalCheck * int(time.Minute))
 
-	return scrapperapp.NewScheduler(&scrapperapp.Scheduler{
+	scheduler, err := scrapperapp.NewScheduler(&scrapperapp.Scheduler{
 		Links:    linkRepo,
 		Notifier: notifier,
 		Checkers: checkers,
 		Log:      log,
 		Interval: interval,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create scheduler: %w", err)
+	}
+
+	return scheduler, nil
 }
 
-func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper scrapperapp.Scrapper, log *zap.Logger) {
+func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper *scrapperapp.Scrapper, log *zap.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			log.Info("start scrapper")

@@ -1,8 +1,9 @@
-package bot_controller
+package botcontroller
 
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -32,11 +33,11 @@ func New(log *zap.Logger, msg Messenger) pbv1.BotServer {
 
 func (a *api) UpdateLink(_ context.Context, req *pbv1.UpdateLinkRequest) (*pbv1.UpdateLinkResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "empty request")
+		return nil, fmt.Errorf("invalid argument: %w", status.Error(codes.InvalidArgument, "empty request"))
 	}
 	if len(req.GetTgChatIds()) == 0 {
 		a.log.Debug("tgChatsIds is nil")
-		return nil, status.Error(codes.InvalidArgument, "tgChatIds must not be empty")
+		return nil, fmt.Errorf("invalid argument: %w", status.Error(codes.InvalidArgument, "empty request"))
 	}
 
 	text := formatUpdate(req)
@@ -45,7 +46,7 @@ func (a *api) UpdateLink(_ context.Context, req *pbv1.UpdateLinkRequest) (*pbv1.
 	for _, chatID := range req.GetTgChatIds() {
 		if err := a.msg.SendMessage(chatID, 0, text); err != nil {
 			a.log.Debug("can`t send message", zap.Int64("chatId", chatID))
-			failed = append(failed, fmt.Sprintf("%d", chatID))
+			failed = append(failed, strconv.FormatInt(chatID, 10))
 		}
 	}
 
