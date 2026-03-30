@@ -56,7 +56,6 @@ func TestDBRepositories(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 
 		t.Run(tc.name+"_chat_crud", func(t *testing.T) {
 			env := mustStartPostgres(t)

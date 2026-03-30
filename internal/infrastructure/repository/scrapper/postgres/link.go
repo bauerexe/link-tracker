@@ -3,15 +3,16 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
-
-	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 
 	"github.com/doug-martin/goqu/v9"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
 type LinkRepository struct {
@@ -32,35 +33,54 @@ func NewLinkRepository(pool *pgxpool.Pool) usecase.LinkRepository {
 	}
 }
 
-func (r *LinkRepository) CreateLink(ctx context.Context, chatID int64, url string, tags, filters []string) (*domain.Link, error) {
+func rollbackTx(ctx context.Context, tx pgx.Tx) {
+	rollbackErr := tx.Rollback(ctx)
+	if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		return
+	}
+}
+
+func (r *LinkRepository) CreateLink(
+	ctx context.Context,
+	chatID int64,
+	url string,
+	tags, filters []string,
+) (*domain.Link, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("begin transaction for create link: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackTx(ctx, tx)
 
 	linkID, err := r.getOrCreateLinkID(ctx, tx, url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get or create link id for %q: %w", url, err)
 	}
 
 	chatLinkID, err := r.insertChatLink(ctx, tx, chatID, linkID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("insert chat link for chat_id=%d link_id=%d: %w", chatID, linkID, err)
 	}
 
 	for _, tag := range tags {
-		tagID, err := r.getOrCreateTagID(ctx, tx, tag)
-		if err != nil {
-			return nil, err
+		tagID, getTagErr := r.getOrCreateTagID(ctx, tx, tag)
+		if getTagErr != nil {
+			return nil, fmt.Errorf("get or create tag id for %q: %w", tag, getTagErr)
 		}
-		if err = r.insertChatLinkTag(ctx, tx, chatLinkID, tagID); err != nil {
-			return nil, err
+
+		insertTagErr := r.insertChatLinkTag(ctx, tx, chatLinkID, tagID)
+		if insertTagErr != nil {
+			return nil, fmt.Errorf(
+				"insert chat link tag for chat_link_id=%d tag_id=%d: %w",
+				chatLinkID,
+				tagID,
+				insertTagErr,
+			)
 		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("commit transaction for create link: %w", err)
 	}
 
 	return &domain.Link{
@@ -72,8 +92,9 @@ func (r *LinkRepository) CreateLink(ctx context.Context, chatID int64, url strin
 }
 
 func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]*domain.Link, error) {
-	if err := r.ensureChatExists(ctx, r.pool, chatID); err != nil {
-		return nil, err
+	err := r.ensureChatExists(ctx, r.pool, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("ensure chat exists for chat_id=%d: %w", chatID, err)
 	}
 
 	sql, args, err := r.dialect.From(goqu.T("chat_links").As("cl")).
@@ -89,12 +110,12 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		Order(goqu.I("l.url").Asc()).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build query for links by chat_id=%d: %w", chatID, err)
 	}
 
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query links by chat_id=%d: %w", chatID, err)
 	}
 	defer rows.Close()
 
@@ -103,13 +124,14 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		var id int64
 		var url string
 
-		if err = rows.Scan(&id, &url); err != nil {
-			return nil, err
+		scanErr := rows.Scan(&id, &url)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan link row for chat_id=%d: %w", chatID, scanErr)
 		}
 
-		tags, err := r.getTagsByChatLinkID(ctx, r.pool, id)
-		if err != nil {
-			return nil, err
+		tags, tagsErr := r.getTagsByChatLinkID(ctx, r.pool, id)
+		if tagsErr != nil {
+			return nil, fmt.Errorf("get tags by chat_link_id=%d: %w", id, tagsErr)
 		}
 
 		links = append(links, &domain.Link{
@@ -120,8 +142,9 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		})
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return nil, fmt.Errorf("iterate links by chat_id=%d: %w", chatID, rowsErr)
 	}
 
 	return links, nil
@@ -130,33 +153,35 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 func (r *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url string) (*domain.Link, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("begin transaction for delete link: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackTx(ctx, tx)
 
-	if err = r.ensureChatExists(ctx, tx, chatID); err != nil {
-		return nil, err
+	err = r.ensureChatExists(ctx, tx, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("ensure chat exists for chat_id=%d: %w", chatID, err)
 	}
 
 	chatLinkID, linkID, err := r.findChatLink(ctx, tx, chatID, url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("find chat link for chat_id=%d url=%q: %w", chatID, url, err)
 	}
 
 	tags, err := r.getTagsByChatLinkID(ctx, tx, chatLinkID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get tags by chat_link_id=%d: %w", chatLinkID, err)
 	}
 
 	sql, args, err := r.dialect.Delete("chat_links").
 		Where(goqu.C("id").Eq(chatLinkID)).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build delete chat_link query for id=%d: %w", chatLinkID, err)
 	}
 
-	if _, err = tx.Exec(ctx, sql, args...); err != nil {
-		return nil, err
+	_, err = tx.Exec(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("delete chat_link id=%d: %w", chatLinkID, err)
 	}
 
 	sql, args, err = r.dialect.From("chat_links").
@@ -164,12 +189,13 @@ func (r *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 		Where(goqu.C("link_id").Eq(linkID)).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build count chat_links for link_id=%d: %w", linkID, err)
 	}
 
 	var cnt int
-	if err = tx.QueryRow(ctx, sql, args...).Scan(&cnt); err != nil {
-		return nil, err
+	err = tx.QueryRow(ctx, sql, args...).Scan(&cnt)
+	if err != nil {
+		return nil, fmt.Errorf("count chat_links for link_id=%d: %w", linkID, err)
 	}
 
 	if cnt == 0 {
@@ -177,16 +203,18 @@ func (r *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 			Where(goqu.C("id").Eq(linkID)).
 			ToSQL()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("build delete link query for id=%d: %w", linkID, err)
 		}
 
-		if _, err = tx.Exec(ctx, sql, args...); err != nil {
-			return nil, err
+		_, err = tx.Exec(ctx, sql, args...)
+		if err != nil {
+			return nil, fmt.Errorf("delete link id=%d: %w", linkID, err)
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("commit transaction for delete link: %w", err)
 	}
 
 	return &domain.Link{
@@ -203,12 +231,12 @@ func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 		Order(goqu.C("url").Asc()).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build query for list links: %w", err)
 	}
 
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query list links: %w", err)
 	}
 	defer rows.Close()
 
@@ -217,8 +245,9 @@ func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 		var id int64
 		var url string
 
-		if err = rows.Scan(&id, &url); err != nil {
-			return nil, err
+		scanErr := rows.Scan(&id, &url)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan link row: %w", scanErr)
 		}
 
 		links = append(links, &domain.Link{
@@ -227,8 +256,9 @@ func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 		})
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return nil, fmt.Errorf("iterate list links rows: %w", rowsErr)
 	}
 
 	return links, nil
@@ -245,26 +275,30 @@ func (r *LinkRepository) GetChatIDsByLink(ctx context.Context, url string) ([]in
 		Order(goqu.I("cl.chat_id").Asc()).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build query for chat ids by url=%q: %w", url, err)
 	}
 
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query chat ids by url=%q: %w", url, err)
 	}
 	defer rows.Close()
 
 	var ids []int64
 	for rows.Next() {
 		var id int64
-		if err = rows.Scan(&id); err != nil {
-			return nil, err
+
+		scanErr := rows.Scan(&id)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan chat_id for url=%q: %w", url, scanErr)
 		}
+
 		ids = append(ids, id)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return nil, fmt.Errorf("iterate chat ids for url=%q: %w", url, rowsErr)
 	}
 
 	if len(ids) == 0 {
@@ -280,17 +314,19 @@ func (r *LinkRepository) GetURLState(ctx context.Context, url string) (domain.UR
 		Where(goqu.C("url").Eq(url)).
 		ToSQL()
 	if err != nil {
-		return domain.URLState{}, err
+		return domain.URLState{}, fmt.Errorf("build query for url state url=%q: %w", url, err)
 	}
 
 	var lastCheckedAt *time.Time
 	var lastUpdatedAt *time.Time
 
-	if err = r.pool.QueryRow(ctx, sql, args...).Scan(&lastCheckedAt, &lastUpdatedAt); err != nil {
+	err = r.pool.QueryRow(ctx, sql, args...).Scan(&lastCheckedAt, &lastUpdatedAt)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.URLState{}, nil
 		}
-		return domain.URLState{}, err
+
+		return domain.URLState{}, fmt.Errorf("query url state url=%q: %w", url, err)
 	}
 
 	var st domain.URLState
@@ -314,12 +350,12 @@ func (r *LinkRepository) SetURLState(ctx context.Context, url string, st domain.
 		Where(goqu.C("url").Eq(url)).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build update url state query for url=%q: %w", url, err)
 	}
 
 	tag, err := r.pool.Exec(ctx, sql, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("update url state for url=%q: %w", url, err)
 	}
 
 	if tag.RowsAffected() == 0 {
@@ -335,73 +371,74 @@ func (r *LinkRepository) ensureChatExists(ctx context.Context, q db, chatID int6
 		Where(goqu.C("id").Eq(chatID)).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build query for ensure chat exists chat_id=%d: %w", chatID, err)
 	}
 
 	var id int64
-	if err = q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+	err = q.QueryRow(ctx, sql, args...).Scan(&id)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return usecase.ErrChatNotFound
 		}
-		return err
+
+		return fmt.Errorf("query ensure chat exists chat_id=%d: %w", chatID, err)
 	}
 
 	return nil
 }
 
 func (r *LinkRepository) getOrCreateLinkID(ctx context.Context, q db, url string) (int64, error) {
-	sql, args, err := r.dialect.Insert("links").
-		Rows(goqu.Record{"url": url}).
-		OnConflict(goqu.DoNothing()).
-		ToSQL()
-	if err != nil {
-		return 0, err
-	}
-
-	if _, err = q.Exec(ctx, sql, args...); err != nil {
-		return 0, err
-	}
-
-	sql, args, err = r.dialect.From("links").
-		Select("id").
-		Where(goqu.C("url").Eq(url)).
-		ToSQL()
-	if err != nil {
-		return 0, err
-	}
-
-	var id int64
-	if err = q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		return 0, err
-	}
-
-	return id, nil
+	return r.getOrCreateID(
+		ctx,
+		q,
+		"links",
+		"url",
+		url,
+	)
 }
 
 func (r *LinkRepository) getOrCreateTagID(ctx context.Context, q db, name string) (int64, error) {
-	sql, args, err := r.dialect.Insert("tags").
-		Rows(goqu.Record{"name": name}).
+	return r.getOrCreateID(
+		ctx,
+		q,
+		"tags",
+		"name",
+		name,
+	)
+}
+
+func (r *LinkRepository) getOrCreateID(
+	ctx context.Context,
+	q db,
+	table string,
+	uniqueColumn string,
+	value string,
+) (int64, error) {
+	sql, args, err := r.dialect.Insert(table).
+		Rows(goqu.Record{uniqueColumn: value}).
 		OnConflict(goqu.DoNothing()).
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build insert query for %s.%s=%q: %w", table, uniqueColumn, value, err)
 	}
 
-	if _, err = q.Exec(ctx, sql, args...); err != nil {
-		return 0, err
+	_, err = q.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, fmt.Errorf("exec insert for %s.%s=%q: %w", table, uniqueColumn, value, err)
 	}
 
-	sql, args, err = r.dialect.From("tags").
+	sql, args, err = r.dialect.From(table).
 		Select("id").
-		Where(goqu.C("name").Eq(name)).
+		Where(goqu.C(uniqueColumn).Eq(value)).
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build select id query for %s.%s=%q: %w", table, uniqueColumn, value, err)
 	}
 
 	var id int64
-	if err = q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		return 0, err
+	err = q.QueryRow(ctx, sql, args...).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("select id for %s.%s=%q: %w", table, uniqueColumn, value, err)
 	}
 
 	return id, nil
@@ -416,11 +453,12 @@ func (r *LinkRepository) insertChatLink(ctx context.Context, q db, chatID, linkI
 		Returning("id").
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build insert chat_link query chat_id=%d link_id=%d: %w", chatID, linkID, err)
 	}
 
 	var id int64
-	if err := q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+	err = q.QueryRow(ctx, sql, args...).Scan(&id)
+	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
@@ -430,7 +468,8 @@ func (r *LinkRepository) insertChatLink(ctx context.Context, q db, chatID, linkI
 				return 0, usecase.ErrLinkAlreadyTracked
 			}
 		}
-		return 0, err
+
+		return 0, fmt.Errorf("insert chat_link chat_id=%d link_id=%d: %w", chatID, linkID, err)
 	}
 
 	return id, nil
@@ -445,11 +484,20 @@ func (r *LinkRepository) insertChatLinkTag(ctx context.Context, q db, chatLinkID
 		OnConflict(goqu.DoNothing()).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf(
+			"build insert chat_link_tag query chat_link_id=%d tag_id=%d: %w",
+			chatLinkID,
+			tagID,
+			err,
+		)
 	}
 
 	_, err = q.Exec(ctx, sql, args...)
-	return err
+	if err != nil {
+		return fmt.Errorf("insert chat_link_tag chat_link_id=%d tag_id=%d: %w", chatLinkID, tagID, err)
+	}
+
+	return nil
 }
 
 func (r *LinkRepository) findChatLink(ctx context.Context, q db, chatID int64, url string) (int64, int64, error) {
@@ -465,15 +513,19 @@ func (r *LinkRepository) findChatLink(ctx context.Context, q db, chatID int64, u
 		).
 		ToSQL()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("build query for find chat link chat_id=%d url=%q: %w", chatID, url, err)
 	}
 
-	var chatLinkID, linkID int64
-	if err = q.QueryRow(ctx, sql, args...).Scan(&chatLinkID, &linkID); err != nil {
+	var chatLinkID int64
+	var linkID int64
+
+	err = q.QueryRow(ctx, sql, args...).Scan(&chatLinkID, &linkID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, usecase.ErrLinkNotFound
 		}
-		return 0, 0, err
+
+		return 0, 0, fmt.Errorf("query find chat link chat_id=%d url=%q: %w", chatID, url, err)
 	}
 
 	return chatLinkID, linkID, nil
@@ -490,26 +542,30 @@ func (r *LinkRepository) getTagsByChatLinkID(ctx context.Context, q db, chatLink
 		Order(goqu.I("t.name").Asc()).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build query for tags by chat_link_id=%d: %w", chatLinkID, err)
 	}
 
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query tags by chat_link_id=%d: %w", chatLinkID, err)
 	}
 	defer rows.Close()
 
 	var tags []string
 	for rows.Next() {
 		var tag string
-		if err = rows.Scan(&tag); err != nil {
-			return nil, err
+
+		scanErr := rows.Scan(&tag)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan tag for chat_link_id=%d: %w", chatLinkID, scanErr)
 		}
+
 		tags = append(tags, tag)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return nil, fmt.Errorf("iterate tags for chat_link_id=%d: %w", chatLinkID, rowsErr)
 	}
 
 	return tags, nil
