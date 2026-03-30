@@ -237,10 +237,10 @@ func (b *Bot) runGrpc() {
 }
 
 func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message) (bool, error) {
-	if strings.HasPrefix(upd.Command.String(), "/track") {
+	if upd.Command.String() == "track" {
 		return b.startTrackDialog(logger, upd)
 	}
-
+	logger.Info("AAAAAAAAAAAAAAA", zap.String("command", upd.Command.String()), zap.String("arguments", upd.Arguments), zap.String("command", upd.Command.String()))
 	b.fsm.mu.Lock()
 	st := b.fsm.get(upd.ChatID)
 	step := st.step
@@ -283,13 +283,13 @@ func (b *Bot) startTrackDialog(logger *zap.Logger, upd domain.Message) (bool, er
 }
 
 func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message) (bool, error) {
-	if upd.Command == "/skip" {
+	if upd.Command == "skip" {
 		b.fsm.mu.Lock()
 		url := b.fsm.get(upd.ChatID).draft.url
 		b.fsm.reset(upd.ChatID)
 		b.fsm.mu.Unlock()
 
-		replyText, err := b.router.Dispatch(upd, "/track", url)
+		replyText, err := b.router.Dispatch(upd, "track", url)
 		if err != nil {
 			logger.Error("track dispatch failed", zap.Error(err))
 			return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
@@ -299,7 +299,7 @@ func (b *Bot) handleTrackControlCommands(logger *zap.Logger, upd domain.Message)
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, replyText)
 	}
 
-	if upd.Command == "/cancel" {
+	if upd.Command == "cancel" {
 		b.fsm.mu.Lock()
 		b.fsm.reset(upd.ChatID)
 		b.fsm.mu.Unlock()
@@ -356,7 +356,7 @@ func (b *Bot) handleTrackWaitTags(logger *zap.Logger, upd domain.Message) (bool,
 		args = url + " " + strings.Join(tags, " ")
 	}
 
-	replyText, err := b.router.Dispatch(upd, "/track", args)
+	replyText, err := b.router.Dispatch(upd, "track", args)
 	if err != nil {
 		logger.Error("track dispatch failed", zap.Error(err))
 		return true, b.botRepository.SendMessage(upd.ChatID, upd.MessageID, err.Error())
