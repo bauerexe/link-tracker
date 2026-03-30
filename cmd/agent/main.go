@@ -1,1 +1,5 @@
-package agent
+package main
+
+func main() {
+	// TODO
+}
