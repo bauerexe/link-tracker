@@ -240,7 +240,7 @@ func (b *Bot) handleTrackDialog(logger *zap.Logger, upd domain.Message) (bool, e
 	if upd.Command.String() == "track" {
 		return b.startTrackDialog(logger, upd)
 	}
-	logger.Info("AAAAAAAAAAAAAAA", zap.String("command", upd.Command.String()), zap.String("arguments", upd.Arguments), zap.String("command", upd.Command.String()))
+	logger.Info("handle track dialog", zap.String("command", upd.Command.String()), zap.String("arguments", upd.Arguments), zap.String("command", upd.Command.String()))
 	b.fsm.mu.Lock()
 	st := b.fsm.get(upd.ChatID)
 	step := st.step
