@@ -79,7 +79,7 @@ func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 
 	chatLinks, ok := l.idURLLinks[chatID]
 	if !ok {
-		return []*domain.Link{}, usecase.ErrChatNotFound
+		return nil, usecase.ErrChatNotFound
 	}
 
 	urls := make([]string, 0, len(chatLinks))

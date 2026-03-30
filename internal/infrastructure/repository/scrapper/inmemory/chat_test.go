@@ -3,46 +3,58 @@ package repository
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 )
 
 func TestChatRepository_CreateChat(t *testing.T) {
 	type testCase struct {
-		name string
-		id   int64
-		err  error
+		name    string
+		id      int64
+		ctx     func() context.Context
+		prepare func(rp usecase.ChatRepository)
+		err     error
 	}
 
 	testCases := []testCase{
 		{
 			name: "positive 1",
 			id:   123,
+			ctx:  context.Background,
 			err:  nil,
 		},
 		{
 			name: "negative 1",
 			id:   123,
-			err:  usecase.ErrChatAlreadyExist,
+			ctx:  context.Background,
+			prepare: func(rp usecase.ChatRepository) {
+				_, _ = rp.CreateChat(context.Background(), 123)
+			},
+			err: usecase.ErrChatAlreadyExist,
 		},
 		{
 			name: "negative 2 ctx is Done",
 			id:   124,
-			err:  context.DeadlineExceeded,
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			err: context.Canceled,
 		},
 	}
 
-	rp := NewChatRepository()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
-	defer cancel()
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chat, err := rp.CreateChat(ctx, tc.id)
+			rp := NewChatRepository()
+
+			if tc.prepare != nil {
+				tc.prepare(rp)
+			}
+
+			chat, err := rp.CreateChat(tc.ctx(), tc.id)
 
 			switch {
 			case tc.err != nil:
@@ -51,51 +63,59 @@ func TestChatRepository_CreateChat(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tc.id, chat.ID)
 			}
-
-			time.Sleep(time.Millisecond * 51)
 		})
 	}
 }
 
 func TestChatRepository_DeleteChatByID(t *testing.T) {
 	type testCase struct {
-		name string
-		id   int64
-		err  error
+		name    string
+		id      int64
+		ctx     func() context.Context
+		prepare func(rp usecase.ChatRepository)
+		err     error
 	}
 
 	testCases := []testCase{
 		{
 			name: "positive 1",
 			id:   123,
-			err:  nil,
+			ctx:  context.Background,
+			prepare: func(rp usecase.ChatRepository) {
+				_, _ = rp.CreateChat(context.Background(), 123)
+			},
+			err: nil,
 		},
 		{
 			name: "negative 1 chat not found",
 			id:   123,
+			ctx:  context.Background,
 			err:  usecase.ErrChatNotFound,
 		},
 		{
 			name: "negative 2 ctx is Done",
 			id:   124,
-			err:  context.DeadlineExceeded,
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			prepare: func(rp usecase.ChatRepository) {
+				_, _ = rp.CreateChat(context.Background(), 123)
+			},
+			err: context.Canceled,
 		},
 	}
 
-	rp := NewChatRepository()
-
-	ctxPrep, cancel1 := context.WithTimeout(context.Background(), time.Second)
-	defer cancel1()
-	_, err := rp.CreateChat(ctxPrep, 123)
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
-	defer cancel()
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var chat *domain.Chat
-			chat, err = rp.DeleteChatByID(ctx, tc.id)
+			rp := NewChatRepository()
+
+			if tc.prepare != nil {
+				tc.prepare(rp)
+			}
+
+			chat, err := rp.DeleteChatByID(tc.ctx(), tc.id)
 
 			switch {
 			case tc.err != nil:
@@ -105,50 +125,58 @@ func TestChatRepository_DeleteChatByID(t *testing.T) {
 				require.Equal(t, tc.id, chat.ID)
 			}
 		})
-
-		time.Sleep(time.Millisecond * 51)
 	}
 }
 
 func TestChatRepository_GetChatByID(t *testing.T) {
 	type testCase struct {
-		name string
-		id   int64
-		err  error
+		name    string
+		id      int64
+		ctx     func() context.Context
+		prepare func(rp usecase.ChatRepository)
+		err     error
 	}
 
 	testCases := []testCase{
 		{
 			name: "positive 1",
 			id:   123,
-			err:  nil,
+			ctx:  context.Background,
+			prepare: func(rp usecase.ChatRepository) {
+				_, _ = rp.CreateChat(context.Background(), 123)
+			},
+			err: nil,
 		},
 		{
 			name: "negative 1 chat not found",
 			id:   999,
+			ctx:  context.Background,
 			err:  usecase.ErrChatNotFound,
 		},
 		{
 			name: "negative 2 ctx is Done",
 			id:   124,
-			err:  context.DeadlineExceeded,
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			prepare: func(rp usecase.ChatRepository) {
+				_, _ = rp.CreateChat(context.Background(), 123)
+			},
+			err: context.Canceled,
 		},
 	}
 
-	rp := NewChatRepository()
-
-	ctxPrep, cancel1 := context.WithTimeout(context.Background(), time.Second)
-	defer cancel1()
-	_, err := rp.CreateChat(ctxPrep, 123)
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
-	defer cancel()
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var chat *domain.Chat
-			chat, err = rp.GetChatByID(ctx, tc.id)
+			rp := NewChatRepository()
+
+			if tc.prepare != nil {
+				tc.prepare(rp)
+			}
+
+			chat, err := rp.GetChatByID(tc.ctx(), tc.id)
 
 			switch {
 			case tc.err != nil:
@@ -158,7 +186,5 @@ func TestChatRepository_GetChatByID(t *testing.T) {
 				require.Equal(t, tc.id, chat.ID)
 			}
 		})
-
-		time.Sleep(time.Millisecond * 51)
 	}
 }
