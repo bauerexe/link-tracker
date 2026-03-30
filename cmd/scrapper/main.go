@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/db"
 	ormrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/postgres"
-	rawrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/raw_postgres"
+	rawrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/rawpostgres"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -22,6 +23,14 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/scrapper/checkers"
 	controller "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/grpc/scrapper"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
+)
+
+const (
+	httpTimeout             = 10 * time.Second
+	httpKeepAlive           = 30 * time.Second
+	httpMaxIdleConns        = 100
+	httpIdleConnTimeout     = 90 * time.Second
+	httpTLSHandshakeTimeout = 10 * time.Second
 )
 
 func main() {
@@ -35,7 +44,6 @@ func main() {
 			newScrapperServer,
 			newScrapperApp,
 			newAppContext,
-
 			newHTTPClient,
 			newBotConn,
 			newBotClient,
@@ -64,7 +72,7 @@ func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
 	fs := afero.NewOsFs()
 	cfg, err := config.NewScrapperConfig(fs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("init config: %w", err)
 	}
 	log.Info("init config")
 	return &cfg, nil
@@ -72,13 +80,12 @@ func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
 
 func newZap() (*zap.Logger, error) {
 	cfg := zap.NewProductionConfig()
-	// cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	cfg.EncoderConfig.TimeKey = "ts"
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	log, err := cfg.Build()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build zap logger: %w", err)
 	}
 
 	log = log.Named("scrapper").With(zap.String("service", "scrapper"))
@@ -88,7 +95,7 @@ func newZap() (*zap.Logger, error) {
 func newPostgresPool(lc fx.Lifecycle, cfg *config.ScrapperConfig, log *zap.Logger) (*pgxpool.Pool, error) {
 	pool, err := db.NewPostgresPool(context.Background(), cfg.PostgresDSN)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create postgres pool: %w", err)
 	}
 
 	lc.Append(fx.Hook{
@@ -109,7 +116,7 @@ func newChatRepo(cfg *config.ScrapperConfig, pool *pgxpool.Pool) (scrapperapp.Ch
 	case "orm":
 		return ormrepo.NewChatRepository(pool), nil
 	default:
-		return nil, config.ErrorParseFile
+		return nil, config.ErrParseFile
 	}
 }
 
@@ -120,7 +127,7 @@ func newLinkRepo(cfg *config.ScrapperConfig, pool *pgxpool.Pool) (scrapperapp.Li
 	case "orm":
 		return ormrepo.NewLinkRepository(pool), nil
 	default:
-		return nil, config.ErrorParseFile
+		return nil, config.ErrParseFile
 	}
 }
 
@@ -136,17 +143,18 @@ func newHTTPClient(lc fx.Lifecycle, log *zap.Logger) *http.Client {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
+			Timeout:   httpTimeout,
+			KeepAlive: httpKeepAlive,
 		}).DialContext,
 		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          httpMaxIdleConns,
+		IdleConnTimeout:       httpIdleConnTimeout,
+		TLSHandshakeTimeout:   httpTLSHandshakeTimeout,
+		ExpectContinueTimeout: time.Second,
 	}
+
 	client := &http.Client{
-		Timeout:   10 * time.Second,
+		Timeout:   httpTimeout,
 		Transport: transport,
 	}
 
@@ -171,7 +179,7 @@ func newCheckers(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.L
 func newBotConn(lc fx.Lifecycle, cfg *config.ScrapperConfig, log *zap.Logger) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(cfg.BotAddrGRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create grpc client: %w", err)
 	}
 
 	lc.Append(fx.Hook{
@@ -199,15 +207,20 @@ func newScheduler(
 	log *zap.Logger,
 	cfg *config.ScrapperConfig,
 ) (*scrapperapp.Scheduler, error) {
-	interval := time.Duration(cfg.MinutesIntervalCheck * int(time.Minute))
+	interval := time.Duration(cfg.MinutesIntervalCheck) * time.Minute
 
-	return scrapperapp.NewScheduler(&scrapperapp.Scheduler{
+	s, err := scrapperapp.NewScheduler(&scrapperapp.Scheduler{
 		Links:    linkRepo,
 		Notifier: notifier,
 		Checkers: checkers,
 		Log:      log,
 		Interval: interval,
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("new scheduler: %w", err)
+	}
+	return s, nil
 }
 
 func runMigrations(lc fx.Lifecycle, cfg *config.ScrapperConfig) {
@@ -218,7 +231,7 @@ func runMigrations(lc fx.Lifecycle, cfg *config.ScrapperConfig) {
 	})
 }
 
-func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper scrapperapp.Scrapper, log *zap.Logger) {
+func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper *scrapperapp.Scrapper, log *zap.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			log.Info("start scrapper")
@@ -227,7 +240,6 @@ func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper scrapperapp.S
 			}()
 			return nil
 		},
-		OnStop: nil,
 	})
 }
 

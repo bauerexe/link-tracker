@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
@@ -24,15 +25,15 @@ func NewChatRepository(pool *pgxpool.Pool) usecase.ChatRepository {
 	}
 }
 
-func (r *ChatRepository) CreateChat(ctx context.Context, ID int64) (*domain.Chat, error) {
+func (r *ChatRepository) CreateChat(ctx context.Context, id int64) (*domain.Chat, error) {
 	sql, _, err := r.dialect.Insert("chats").
 		Rows(goqu.Record{
-			"id": ID,
+			"id": id,
 		}).
 		Returning("id").
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build create chat query: %w", err)
 	}
 
 	var chatID int64
@@ -42,19 +43,19 @@ func (r *ChatRepository) CreateChat(ctx context.Context, ID int64) (*domain.Chat
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, usecase.ErrChatAlreadyExist
 		}
-		return nil, err
+		return nil, fmt.Errorf("scan created chat id: %w", err)
 	}
 
 	return &domain.Chat{ID: chatID}, nil
 }
 
-func (r *ChatRepository) GetChatByID(ctx context.Context, ID int64) (*domain.Chat, error) {
+func (r *ChatRepository) GetChatByID(ctx context.Context, id int64) (*domain.Chat, error) {
 	sql, _, err := r.dialect.From("chats").
 		Select("id").
-		Where(goqu.C("id").Eq(ID)).
+		Where(goqu.C("id").Eq(id)).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build get chat query: %w", err)
 	}
 
 	var chatID int64
@@ -66,13 +67,13 @@ func (r *ChatRepository) GetChatByID(ctx context.Context, ID int64) (*domain.Cha
 	return &domain.Chat{ID: chatID}, nil
 }
 
-func (r *ChatRepository) DeleteChatByID(ctx context.Context, ID int64) (*domain.Chat, error) {
+func (r *ChatRepository) DeleteChatByID(ctx context.Context, id int64) (*domain.Chat, error) {
 	sql, _, err := r.dialect.Delete("chats").
-		Where(goqu.C("id").Eq(ID)).
+		Where(goqu.C("id").Eq(id)).
 		Returning("id").
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build delete chat query: %w", err)
 	}
 
 	var chatID int64

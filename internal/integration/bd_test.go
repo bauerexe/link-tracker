@@ -14,7 +14,7 @@ import (
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	ormrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/postgres"
-	rawrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/raw_postgres"
+	rawrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/scrapper/rawpostgres"
 )
 
 type dbEnv struct {
@@ -57,186 +57,170 @@ func TestDBRepositories(t *testing.T) {
 
 	for _, tc := range cases {
 
-		t.Run(tc.name+"_chat_crud", func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			env := mustStartPostgres(t)
 			defer env.Close(t)
 
 			r := tc.make(env.pool)
 			ctx := context.Background()
 
-			created, err := r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
-			require.Equal(t, int64(1), created.ID)
+			t.Run("chat_crud", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-			got, err := r.chat.GetChatByID(ctx, 1)
-			require.NoError(t, err)
-			require.Equal(t, int64(1), got.ID)
+				created, err := r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
+				require.Equal(t, int64(1), created.ID)
 
-			deleted, err := r.chat.DeleteChatByID(ctx, 1)
-			require.NoError(t, err)
-			require.Equal(t, int64(1), deleted.ID)
-		})
+				got, err := r.chat.GetChatByID(ctx, 1)
+				require.NoError(t, err)
+				require.Equal(t, int64(1), got.ID)
 
-		t.Run(tc.name+"_link_crud", func(t *testing.T) {
-			env := mustStartPostgres(t)
-			defer env.Close(t)
+				deleted, err := r.chat.DeleteChatByID(ctx, 1)
+				require.NoError(t, err)
+				require.Equal(t, int64(1), deleted.ID)
+			})
 
-			r := tc.make(env.pool)
-			ctx := context.Background()
+			t.Run("link_crud", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-			_, err := r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
+				_, err := r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
 
-			created, err := r.link.CreateLink(ctx, 1, "https://example.com", []string{"go", "db"}, []string{"f1"})
-			require.NoError(t, err)
-			require.Equal(t, "https://example.com", created.URL)
-			require.ElementsMatch(t, []string{"go", "db"}, created.Tags)
+				created, err := r.link.CreateLink(ctx, 1, "https://example.com", []string{"go", "db"}, []string{"f1"})
+				require.NoError(t, err)
+				require.Equal(t, "https://example.com", created.URL)
+				require.ElementsMatch(t, []string{"go", "db"}, created.Tags)
 
-			links, err := r.link.GetLinksByChatID(ctx, 1)
-			require.NoError(t, err)
-			require.Len(t, links, 1)
-			require.Equal(t, "https://example.com", links[0].URL)
-			require.ElementsMatch(t, []string{"go", "db"}, links[0].Tags)
+				links, err := r.link.GetLinksByChatID(ctx, 1)
+				require.NoError(t, err)
+				require.Len(t, links, 1)
+				require.Equal(t, "https://example.com", links[0].URL)
+				require.ElementsMatch(t, []string{"go", "db"}, links[0].Tags)
 
-			all, err := r.link.ListLinks(ctx)
-			require.NoError(t, err)
-			require.Len(t, all, 1)
-			require.Equal(t, "https://example.com", all[0].URL)
+				all, err := r.link.ListLinks(ctx)
+				require.NoError(t, err)
+				require.Len(t, all, 1)
+				require.Equal(t, "https://example.com", all[0].URL)
 
-			ids, err := r.link.GetChatIDsByLink(ctx, "https://example.com")
-			require.NoError(t, err)
-			require.Equal(t, []int64{1}, ids)
+				ids, err := r.link.GetChatIDsByLink(ctx, "https://example.com")
+				require.NoError(t, err)
+				require.Equal(t, []int64{1}, ids)
 
-			deleted, err := r.link.DeleteLink(ctx, 1, "https://example.com")
-			require.NoError(t, err)
-			require.Equal(t, "https://example.com", deleted.URL)
+				deleted, err := r.link.DeleteLink(ctx, 1, "https://example.com")
+				require.NoError(t, err)
+				require.Equal(t, "https://example.com", deleted.URL)
 
-			links, err = r.link.GetLinksByChatID(ctx, 1)
-			require.NoError(t, err)
-			require.Empty(t, links)
-		})
+				links, err = r.link.GetLinksByChatID(ctx, 1)
+				require.NoError(t, err)
+				require.Empty(t, links)
+			})
 
-		t.Run(tc.name+"_link_errors", func(t *testing.T) {
-			env := mustStartPostgres(t)
-			defer env.Close(t)
+			t.Run("link_errors", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-			r := tc.make(env.pool)
-			ctx := context.Background()
+				_, err := r.link.CreateLink(ctx, 404, "https://example.com", nil, nil)
+				require.ErrorIs(t, err, usecase.ErrChatNotFound)
 
-			_, err := r.link.CreateLink(ctx, 404, "https://example.com", nil, nil)
-			require.ErrorIs(t, err, usecase.ErrChatNotFound)
+				_, err = r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
 
-			_, err = r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
+				_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
+				require.NoError(t, err)
 
-			_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
-			require.NoError(t, err)
+				_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
+				require.ErrorIs(t, err, usecase.ErrLinkAlreadyTracked)
 
-			_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
-			require.ErrorIs(t, err, usecase.ErrLinkAlreadyTracked)
+				_, err = r.link.DeleteLink(ctx, 1, "https://missing.com")
+				require.ErrorIs(t, err, usecase.ErrLinkNotFound)
 
-			_, err = r.link.DeleteLink(ctx, 1, "https://missing.com")
-			require.ErrorIs(t, err, usecase.ErrLinkNotFound)
+				_, err = r.link.GetChatIDsByLink(ctx, "https://missing.com")
+				require.ErrorIs(t, err, usecase.ErrLinkNotFound)
+			})
 
-			_, err = r.link.GetChatIDsByLink(ctx, "https://missing.com")
-			require.ErrorIs(t, err, usecase.ErrLinkNotFound)
-		})
+			t.Run("url_state", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-		t.Run(tc.name+"_url_state", func(t *testing.T) {
-			env := mustStartPostgres(t)
-			defer env.Close(t)
+				_, err := r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
 
-			r := tc.make(env.pool)
-			ctx := context.Background()
+				_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
+				require.NoError(t, err)
 
-			_, err := r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
+				got, err := r.link.GetURLState(ctx, "https://example.com")
+				require.NoError(t, err)
+				require.True(t, got.LastCheckedAt.IsZero())
+				require.True(t, got.LastUpdatedAt.IsZero())
 
-			_, err = r.link.CreateLink(ctx, 1, "https://example.com", nil, nil)
-			require.NoError(t, err)
+				st := domain.URLState{
+					LastCheckedAt: time.Now().UTC().Truncate(time.Second),
+					LastUpdatedAt: time.Now().UTC().Add(time.Minute).Truncate(time.Second),
+				}
 
-			got, err := r.link.GetURLState(ctx, "https://example.com")
-			require.NoError(t, err)
-			require.True(t, got.LastCheckedAt.IsZero())
-			require.True(t, got.LastUpdatedAt.IsZero())
+				err = r.link.SetURLState(ctx, "https://example.com", st)
+				require.NoError(t, err)
 
-			st := domain.URLState{
-				LastCheckedAt: time.Now().UTC().Truncate(time.Second),
-				LastUpdatedAt: time.Now().UTC().Add(time.Minute).Truncate(time.Second),
-			}
+				got, err = r.link.GetURLState(ctx, "https://example.com")
+				require.NoError(t, err)
+				require.WithinDuration(t, st.LastCheckedAt, got.LastCheckedAt, time.Second)
+				require.WithinDuration(t, st.LastUpdatedAt, got.LastUpdatedAt, time.Second)
 
-			err = r.link.SetURLState(ctx, "https://example.com", st)
-			require.NoError(t, err)
+				err = r.link.SetURLState(ctx, "https://missing.com", st)
+				require.ErrorIs(t, err, usecase.ErrLinkNotFound)
+			})
 
-			got, err = r.link.GetURLState(ctx, "https://example.com")
-			require.NoError(t, err)
-			require.WithinDuration(t, st.LastCheckedAt, got.LastCheckedAt, time.Second)
-			require.WithinDuration(t, st.LastUpdatedAt, got.LastUpdatedAt, time.Second)
+			t.Run("tag_crud", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-			err = r.link.SetURLState(ctx, "https://missing.com", st)
-			require.ErrorIs(t, err, usecase.ErrLinkNotFound)
-		})
+				_, err := r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
 
-		t.Run(tc.name+"_tag_crud", func(t *testing.T) {
-			env := mustStartPostgres(t)
-			defer env.Close(t)
+				err = r.tag.CreateTag(ctx, 1, "backend")
+				require.NoError(t, err)
 
-			r := tc.make(env.pool)
-			ctx := context.Background()
+				_, err = r.link.CreateLink(ctx, 1, "https://example.com", []string{"backend"}, nil)
+				require.NoError(t, err)
 
-			_, err := r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
+				tags, err := r.tag.GetTagsByChatID(ctx, 1)
+				require.NoError(t, err)
+				require.Contains(t, tags, "backend")
 
-			err = r.tag.CreateTag(ctx, 1, "backend")
-			require.NoError(t, err)
+				err = r.tag.UpdateTag(ctx, 1, "backend", "golang")
+				require.NoError(t, err)
 
-			_, err = r.link.CreateLink(ctx, 1, "https://example.com", []string{"backend"}, nil)
-			require.NoError(t, err)
+				tags, err = r.tag.GetTagsByChatID(ctx, 1)
+				require.NoError(t, err)
+				require.Contains(t, tags, "golang")
+				require.NotContains(t, tags, "backend")
 
-			tags, err := r.tag.GetTagsByChatID(ctx, 1)
-			require.NoError(t, err)
-			require.Contains(t, tags, "backend")
+				err = r.tag.DeleteTag(ctx, 1, "golang")
+				require.NoError(t, err)
 
-			err = r.tag.UpdateTag(ctx, 1, "backend", "golang")
-			require.NoError(t, err)
+				tags, err = r.tag.GetTagsByChatID(ctx, 1)
+				require.NoError(t, err)
+				require.NotContains(t, tags, "golang")
+			})
 
-			tags, err = r.tag.GetTagsByChatID(ctx, 1)
-			require.NoError(t, err)
-			require.Contains(t, tags, "golang")
-			require.NotContains(t, tags, "backend")
+			t.Run("tag_errors", func(t *testing.T) {
+				mustResetDB(ctx, t, env.pool)
 
-			err = r.tag.DeleteTag(ctx, 1, "golang")
-			require.NoError(t, err)
+				err := r.tag.CreateTag(ctx, 404, "backend")
+				require.ErrorIs(t, err, usecase.ErrChatNotFound)
 
-			tags, err = r.tag.GetTagsByChatID(ctx, 1)
-			require.NoError(t, err)
-			require.NotContains(t, tags, "golang")
-		})
+				_, err = r.chat.CreateChat(ctx, 1)
+				require.NoError(t, err)
 
-		t.Run(tc.name+"_tag_errors", func(t *testing.T) {
-			env := mustStartPostgres(t)
-			defer env.Close(t)
+				err = r.tag.CreateTag(ctx, 1, "backend")
+				require.NoError(t, err)
 
-			r := tc.make(env.pool)
-			ctx := context.Background()
+				err = r.tag.CreateTag(ctx, 1, "backend")
+				require.ErrorIs(t, err, usecase.ErrTagAlreadyExist)
 
-			err := r.tag.CreateTag(ctx, 404, "backend")
-			require.ErrorIs(t, err, usecase.ErrChatNotFound)
+				err = r.tag.UpdateTag(ctx, 1, "missing", "new")
+				require.ErrorIs(t, err, usecase.ErrTagNotFound)
 
-			_, err = r.chat.CreateChat(ctx, 1)
-			require.NoError(t, err)
-
-			err = r.tag.CreateTag(ctx, 1, "backend")
-			require.NoError(t, err)
-
-			err = r.tag.CreateTag(ctx, 1, "backend")
-			require.ErrorIs(t, err, usecase.ErrTagAlreadyExist)
-
-			err = r.tag.UpdateTag(ctx, 1, "missing", "new")
-			require.ErrorIs(t, err, usecase.ErrTagNotFound)
-
-			err = r.tag.DeleteTag(ctx, 1, "missing")
-			require.ErrorIs(t, err, usecase.ErrTagNotFound)
+				err = r.tag.DeleteTag(ctx, 1, "missing")
+				require.ErrorIs(t, err, usecase.ErrTagNotFound)
+			})
 		})
 	}
 }
@@ -277,7 +261,7 @@ func mustStartPostgres(t *testing.T) *dbEnv {
 		return pool.Ping(ctx) == nil
 	}, 10*time.Second, 200*time.Millisecond)
 
-	mustApplySchema(t, ctx, pool)
+	mustApplySchema(ctx, t, pool)
 
 	return &dbEnv{pool: pool, tc: tc}
 }
@@ -294,7 +278,7 @@ func (e *dbEnv) Close(t *testing.T) {
 	}
 }
 
-func mustApplySchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+func mustApplySchema(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
 	schema := `
@@ -329,5 +313,20 @@ CREATE TABLE chat_link_tags (
 );
 `
 	_, err := pool.Exec(ctx, schema)
+	require.NoError(t, err)
+}
+
+func mustResetDB(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+
+	_, err := pool.Exec(ctx, `
+		TRUNCATE TABLE
+			chat_link_tags,
+			chat_links,
+			tags,
+			links,
+			chats
+		RESTART IDENTITY CASCADE
+	`)
 	require.NoError(t, err)
 }

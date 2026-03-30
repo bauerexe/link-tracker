@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 
@@ -33,7 +34,7 @@ func (r *TagRepository) CreateTag(ctx context.Context, chatID int64, name string
 		Rows(goqu.Record{"name": name}).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build insert tag query: %w", err)
 	}
 
 	_, err = r.pool.Exec(ctx, sql, args...)
@@ -42,7 +43,7 @@ func (r *TagRepository) CreateTag(ctx context.Context, chatID int64, name string
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return usecase.ErrTagAlreadyExist
 		}
-		return err
+		return fmt.Errorf("exec insert tag: %w", err)
 	}
 
 	return nil
@@ -67,26 +68,27 @@ func (r *TagRepository) GetTagsByChatID(ctx context.Context, chatID int64) ([]st
 		Order(goqu.I("t.name").Asc()).
 		ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select tags query: %w", err)
 	}
 
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query tags: %w", err)
 	}
 	defer rows.Close()
 
 	var tags []string
 	for rows.Next() {
 		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, err
+		scanErr := rows.Scan(&tag)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan tag: %w", scanErr)
 		}
 		tags = append(tags, tag)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("rows error: %w", rowsErr)
 	}
 
 	return tags, nil
@@ -117,17 +119,17 @@ func (r *TagRepository) UpdateTag(ctx context.Context, chatID int64, oldName, ne
 		).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build update tag query: %w", err)
 	}
 
-	_, err = r.pool.Exec(ctx, sql, args...)
-	if err == nil {
+	_, execErr := r.pool.Exec(ctx, sql, args...)
+	if execErr == nil {
 		return nil
 	}
 
 	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
-		return err
+	if !errors.As(execErr, &pgErr) || pgErr.Code != "23505" {
+		return fmt.Errorf("exec update tag: %w", execErr)
 	}
 
 	sql, args, err = r.dialect.Delete("chat_link_tags").
@@ -141,11 +143,15 @@ func (r *TagRepository) UpdateTag(ctx context.Context, chatID int64, oldName, ne
 		).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build delete duplicate tag query: %w", err)
 	}
 
 	_, err = r.pool.Exec(ctx, sql, args...)
-	return err
+	if err != nil {
+		return fmt.Errorf("exec delete duplicate tag: %w", err)
+	}
+
+	return nil
 }
 
 func (r *TagRepository) DeleteTag(ctx context.Context, chatID int64, name string) error {
@@ -168,12 +174,12 @@ func (r *TagRepository) DeleteTag(ctx context.Context, chatID int64, name string
 		).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build delete tag query: %w", err)
 	}
 
 	tag, err := r.pool.Exec(ctx, sql, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec delete tag: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {
@@ -189,15 +195,16 @@ func (r *TagRepository) ensureChatExists(ctx context.Context, chatID int64) erro
 		Where(goqu.C("id").Eq(chatID)).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("build ensure chat query: %w", err)
 	}
 
 	var id int64
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	scanErr := r.pool.QueryRow(ctx, sql, args...).Scan(&id)
+	if scanErr != nil {
+		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return usecase.ErrChatNotFound
 		}
-		return err
+		return fmt.Errorf("scan chat: %w", scanErr)
 	}
 
 	return nil
@@ -220,15 +227,16 @@ func (r *TagRepository) getChatTagID(ctx context.Context, chatID int64, name str
 		).
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build get tag id query: %w", err)
 	}
 
 	var id int64
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	scanErr := r.pool.QueryRow(ctx, sql, args...).Scan(&id)
+	if scanErr != nil {
+		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return 0, usecase.ErrTagNotFound
 		}
-		return 0, err
+		return 0, fmt.Errorf("scan tag id: %w", scanErr)
 	}
 
 	return id, nil
@@ -240,11 +248,12 @@ func (r *TagRepository) getOrCreateTagID(ctx context.Context, name string) (int6
 		OnConflict(goqu.DoNothing()).
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build insert tag query: %w", err)
 	}
 
-	if _, err := r.pool.Exec(ctx, sql, args...); err != nil {
-		return 0, err
+	_, execErr := r.pool.Exec(ctx, sql, args...)
+	if execErr != nil {
+		return 0, fmt.Errorf("exec insert tag: %w", execErr)
 	}
 
 	sql, args, err = r.dialect.From("tags").
@@ -252,12 +261,13 @@ func (r *TagRepository) getOrCreateTagID(ctx context.Context, name string) (int6
 		Where(goqu.C("name").Eq(name)).
 		ToSQL()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("build select tag id query: %w", err)
 	}
 
 	var id int64
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		return 0, err
+	scanErr := r.pool.QueryRow(ctx, sql, args...).Scan(&id)
+	if scanErr != nil {
+		return 0, fmt.Errorf("scan tag id: %w", scanErr)
 	}
 
 	return id, nil
