@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -29,6 +30,9 @@ type repos struct {
 }
 
 func TestDBRepositories(t *testing.T) {
+	if os.Getenv("CI") != "" && os.Getenv("DOCKER_HOST") == "" {
+		t.Skip("docker is not available in this job")
+	}
 	cases := []struct {
 		name string
 		make func(*pgxpool.Pool) repos
