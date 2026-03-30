@@ -35,7 +35,7 @@ test:
     - when: always
 
 integration_test:
-  image: docker
+  image: docker:27.5.1
   stage: test
   variables:
     DOCKER_HOST: tcp://docker:2376
@@ -45,11 +45,12 @@ integration_test:
   tags:
     - dind
   services:
-    - name: docker:dind
+    - name: docker:27.5.1-dind
       alias: docker
   before_script:
     - echo "$CI_JOB_TOKEN" | docker login gitlab.education.tbank.ru:443 -u gitlab-ci-token --password-stdin
   script:
+    - docker pull alpine:3.20
     - docker pull ${GITLAB_DOCKER_PROXY}/alpine:latest
 
 build:
