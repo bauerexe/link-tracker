@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	stdlog "log"
 
@@ -26,11 +27,7 @@ func main() {
 	app := fx.New(
 		fx.Provide(
 			newZap,
-			newCtx,
 			newConfig,
-			newScrapperConn,
-			newScrapperClient,
-			newBotServer,
 			newRouter,
 			newBotRepo,
 			newBotUsecase,
@@ -48,7 +45,7 @@ func newConfig(log *zap.Logger) (config.BotConfig, error) {
 	fs := afero.NewOsFs()
 	cfg, err := config.NewBotConfig(fs)
 	if err != nil {
-		return config.BotConfig{}, err
+		return config.BotConfig{}, fmt.Errorf("load bot config: %w", err)
 	}
 	log.Info("init config")
 	return cfg, nil
@@ -61,7 +58,7 @@ func newZap() (*zap.Logger, error) {
 
 	log, err := cfg.Build()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("bot zap build: %w", err)
 	}
 
 	log = log.Named("bot").With(zap.String("service", "bot"))

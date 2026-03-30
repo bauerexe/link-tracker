@@ -1,7 +1,8 @@
-package bot_gateway
+package botgateway
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -21,8 +22,16 @@ type BotGateway struct {
 
 const timeoutSec = 60
 
+var commandsToSet = []tgbotapi.BotCommand{{Command: "help", Description: "помощь"}, {Command: "start", Description: "старт"}}
+
+var newHTTPClient = func() *http.Client {
+	return &http.Client{Timeout: timeoutSec * time.Second}
+}
+
+var telegramAPIEndpoint = tgbotapi.APIEndpoint
+
 // New - return inited botapp.BotGateway
-func New(token string, log *zap.Logger, commandsToSet []tgbotapi.BotCommand) (botapp.BotGateway, error) {
+func New(token string, log *zap.Logger) (botapp.BotGateway, error) {
 	log = log.Named("infrastructure.telegram")
 	log = log.With(zap.String("pkg", log.Name()))
 
@@ -37,14 +46,14 @@ func New(token string, log *zap.Logger, commandsToSet []tgbotapi.BotCommand) (bo
 	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, httpClient)
 	if err != nil {
 		log.Error("error connect to bot api")
-		return nil, err
+		return nil, fmt.Errorf("connect to bot api: %w", err)
 	}
 
 	cfg := tgbotapi.NewSetMyCommands(commandsToSet...)
 	_, err = api.Request(cfg)
 	if err != nil {
 		log.Error("error set commandsToSet to bot")
-		return nil, err
+		return nil, fmt.Errorf("set commands to bot: %w", err)
 	}
 
 	api.Debug = true
@@ -84,6 +93,27 @@ func (r *BotGateway) GetMessages(ctx context.Context, timeoutSec int) (<-chan do
 	return out, nil
 }
 
+func (r *BotGateway) SendMessage(chatID int64, replyToMessageID int, text string) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyToMessageID = replyToMessageID
+
+	_, err := r.api.Send(msg)
+	if err != nil {
+		r.log.Error("send message failed",
+			zap.Int64("chat_id", chatID),
+			zap.Int("reply_to", replyToMessageID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("send message failed: %w", err)
+	}
+
+	r.log.Debug("message sent",
+		zap.Int64("chat_id", chatID),
+		zap.Int("reply_to", replyToMessageID),
+	)
+	return nil
+}
+
 func (r *BotGateway) handleTelegramUpdate(ctx context.Context, out chan<- domain.Message, upd tgbotapi.Update,
 	ok bool,
 ) bool {
@@ -116,25 +146,4 @@ func (r *BotGateway) handleTelegramUpdate(ctx context.Context, out chan<- domain
 		r.log.Info("context cancelled while forwarding message", zap.Error(ctx.Err()))
 		return false
 	}
-}
-
-func (r *BotGateway) SendMessage(chatID int64, replyToMessageID int, text string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ReplyToMessageID = replyToMessageID
-
-	_, err := r.api.Send(msg)
-	if err != nil {
-		r.log.Error("send message failed",
-			zap.Int64("chat_id", chatID),
-			zap.Int("reply_to", replyToMessageID),
-			zap.Error(err),
-		)
-		return err
-	}
-
-	r.log.Debug("message sent",
-		zap.Int64("chat_id", chatID),
-		zap.Int("reply_to", replyToMessageID),
-	)
-	return nil
 }

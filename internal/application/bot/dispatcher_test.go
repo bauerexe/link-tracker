@@ -1,10 +1,11 @@
 package botapp
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
@@ -53,7 +54,7 @@ func TestBotDispatcher_Dispatch(t *testing.T) {
 			name:     "negative 1",
 			command:  domain.Command("/pam_pam"),
 			positive: false,
-			err:      ErrorUnknownCommand,
+			err:      ErrUnknownCommand,
 			expected: "",
 		},
 	}
@@ -62,12 +63,12 @@ func TestBotDispatcher_Dispatch(t *testing.T) {
 			t.Parallel()
 			dispatch, err := dp.Dispatch(domain.Message{ChatID: 1}, tc.command, "")
 			if err != nil && tc.positive {
-				assert.Error(t, err, "err in positive test")
+				require.Error(t, err, "err in positive test")
 			} else if err != nil {
-				assert.EqualError(t, err, tc.err.Error())
+				require.EqualError(t, err, tc.err.Error())
 			}
 			if !tc.positive {
-				assert.Error(t, fmt.Errorf("expected err"))
+				assert.Error(t, errors.New("expected err"))
 			} else {
 				assert.Equal(t, tc.expected, dispatch)
 			}

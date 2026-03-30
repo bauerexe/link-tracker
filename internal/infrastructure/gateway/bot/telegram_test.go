@@ -1,10 +1,9 @@
-package bot_gateway
+package botgateway
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -16,19 +15,6 @@ import (
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
-
-type roundTripperRewrite struct {
-	base   http.RoundTripper
-	target *url.URL
-}
-
-func (rt roundTripperRewrite) RoundTrip(req *http.Request) (*http.Response, error) {
-	r2 := req.Clone(req.Context())
-	r2.URL.Scheme = rt.target.Scheme
-	r2.URL.Host = rt.target.Host
-	r2.Host = rt.target.Host
-	return rt.base.RoundTrip(r2)
-}
 
 func TestTelegramRepository_BasicFlow(t *testing.T) {
 	t.Parallel()
@@ -50,7 +36,6 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 		sent      capturedSend
 	)
 
-	// Fake Telegram API
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if !strings.HasPrefix(path, "/bot"+token+"/") {
@@ -91,10 +76,16 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	targetURL := mustParseURL(t, srv.URL)
-	old := http.DefaultTransport
-	http.DefaultTransport = roundTripperRewrite{base: old, target: targetURL}
-	defer func() { http.DefaultTransport = old }()
+	oldClientFactory := newHTTPClient
+	oldEndpoint := telegramAPIEndpoint
+	newHTTPClient = func() *http.Client {
+		return srv.Client()
+	}
+	telegramAPIEndpoint = srv.URL + "/bot%s/%s"
+	defer func() {
+		newHTTPClient = oldClientFactory
+		telegramAPIEndpoint = oldEndpoint
+	}()
 
 	repo, err := New(token, zap.NewNop(), nil)
 	require.NoError(t, err)
@@ -137,11 +128,4 @@ func TestTelegramRepository_BasicFlow(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for message")
 	}
-}
-
-func mustParseURL(t *testing.T, raw string) *url.URL {
-	t.Helper()
-	u, err := url.Parse(raw)
-	require.NoError(t, err)
-	return u
 }

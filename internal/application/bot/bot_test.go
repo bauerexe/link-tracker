@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -69,13 +70,13 @@ func TestNewBot(t *testing.T) {
 			bot, err := NewBot(tc.token, repo, nil, tc.router, zap.NewNop(), nil)
 
 			if tc.positive {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.NotNil(t, bot)
 				return
 			}
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, bot)
-			assert.EqualError(t, err, tc.err.Error())
+			require.EqualError(t, err, tc.err.Error())
 		})
 	}
 }
@@ -343,7 +344,7 @@ func TestBot_Track_And_List_TableDriven(t *testing.T) {
 					Command:   domain.Command(st.command),
 					Arguments: st.args,
 				}, true)
-				if err != nil && !errors.Is(err, ErrorUnknownCommand) {
+				if err != nil && !errors.Is(err, ErrUnknownCommand) {
 					t.Fatalf("step %d (%q) err: %v", i, st.text, err)
 				}
 			}

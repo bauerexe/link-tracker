@@ -19,8 +19,8 @@ type BotConfig struct {
 }
 
 var (
-	ErrorReadFile  = errors.New("error while read file")
-	ErrorParseFile = errors.New("error while parse file")
+	ErrReadFile  = errors.New("error while read file")
+	ErrParseFile = errors.New("error while parse file")
 )
 
 // NewBotConfig - init and parse config file 'app.env' in root, with prefix 'bot'
@@ -30,10 +30,10 @@ func NewBotConfig(fs afero.Fs) (BotConfig, error) {
 
 	file, err := afero.ReadFile(fs, envFile)
 	if err != nil {
-		return BotConfig{}, ErrorReadFile
+		return BotConfig{}, ErrReadFile
 	}
 	if tree, err = parse.ParseBytes(file); err != nil {
-		return BotConfig{}, ErrorParseFile
+		return BotConfig{}, ErrParseFile
 	}
 	config := &BotConfig{}
 	parse.Populate(config, tree.GetConfig(), "bot")
