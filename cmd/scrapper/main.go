@@ -135,8 +135,9 @@ func newScrapperServer(log *zap.Logger, chatRepo scrapperapp.ChatRepository, lin
 	return controller.New(log, chatRepo, linkRepo)
 }
 
-func newScrapperApp(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) scrapperapp.Scrapper {
-	return scrapperapp.New(server, log, cfg)
+func newScrapperApp(server pbv1.ScrapperServer, log *zap.Logger, cfg *config.ScrapperConfig) *scrapperapp.Scrapper {
+	sa := scrapperapp.New(server, log, cfg)
+	return &sa
 }
 
 func newHTTPClient(lc fx.Lifecycle, log *zap.Logger) *http.Client {
