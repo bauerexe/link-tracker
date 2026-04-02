@@ -41,8 +41,8 @@ func NewScheduler(scheduler *Scheduler) (*Scheduler, error) {
 		return nil, errors.New("err: nil notifier")
 	}
 	if len(scheduler.Checkers) == 0 || scheduler.Checkers == nil {
-		scheduler.Log.Error("err: nil checkers or zero elements in checkers")
-		return nil, errors.New("err: nil checkers or zero elements in checkers")
+		scheduler.Log.Error("err: nil clients or zero elements in clients")
+		return nil, errors.New("err: nil clients or zero elements in clients")
 	}
 	return scheduler, nil
 }

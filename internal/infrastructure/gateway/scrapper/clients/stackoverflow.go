@@ -1,4 +1,4 @@
-package checkers
+package clients
 
 import (
 	"context"

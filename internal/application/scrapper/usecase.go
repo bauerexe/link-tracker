@@ -38,6 +38,13 @@ type LinkRepository interface {
 	SetURLState(ctx context.Context, url string, st domain.URLState) error
 }
 
+type TagRepository interface {
+	CreateTag(ctx context.Context, chatID int64, name string) error
+	GetTagsByChatID(ctx context.Context, chatID int64) ([]string, error)
+	UpdateTag(ctx context.Context, chatID int64, oldName, newName string) error
+	DeleteTag(ctx context.Context, chatID int64, name string) error
+}
+
 type BotNotifier interface {
 	Notify(ctx context.Context, url, description string, chatIDs []int64) error
 }
@@ -45,11 +52,4 @@ type BotNotifier interface {
 type Checker interface {
 	Match(url string) bool
 	Check(ctx context.Context, url string, since time.Time) (desc string, updatedAt time.Time, updated bool, err error)
-}
-
-type TagRepository interface {
-	CreateTag(ctx context.Context, chatID int64, name string) error
-	GetTagsByChatID(ctx context.Context, chatID int64) ([]string, error)
-	UpdateTag(ctx context.Context, chatID int64, oldName, newName string) error
-	DeleteTag(ctx context.Context, chatID int64, name string) error
 }
