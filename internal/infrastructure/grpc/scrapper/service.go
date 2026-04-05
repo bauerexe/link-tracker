@@ -8,16 +8,23 @@ import (
 )
 
 type api struct {
-	log            *zap.Logger
-	chatRepository usecase.ChatRepository
-	linkRepository usecase.LinkRepository
+	log              *zap.Logger
+	chatRepository   usecase.ChatRepository
+	linkRepository   usecase.LinkRepository
+	trackLinkService *usecase.TrackLinkService
 }
 
 // New - return implementation of pbv1.ScrapperServer
-func New(log *zap.Logger, chatRepo usecase.ChatRepository, linkRepo usecase.LinkRepository) pbv1.ScrapperServer {
+func New(
+	log *zap.Logger,
+	chatRepo usecase.ChatRepository,
+	linkRepo usecase.LinkRepository,
+	trackLinkService *usecase.TrackLinkService,
+) pbv1.ScrapperServer {
 	return &api{
-		log:            log,
-		chatRepository: chatRepo,
-		linkRepository: linkRepo,
+		log:              log,
+		chatRepository:   chatRepo,
+		linkRepository:   linkRepo,
+		trackLinkService: trackLinkService,
 	}
 }

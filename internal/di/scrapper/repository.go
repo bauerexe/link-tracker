@@ -5,6 +5,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
 	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/services/postgres"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 
 	scrapperapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
@@ -17,6 +18,7 @@ var RepositoryModule = fx.Options(
 		newChatRepo,
 		newLinkRepo,
 		newGithubRepository,
+		newTrackLinkService,
 	),
 )
 
@@ -50,4 +52,14 @@ func newLinkRepo(
 
 func newGithubRepository(pool *pgxpool.Pool) github.Repository {
 	return repository.NewGithubRepository(pool)
+}
+
+func newTrackLinkService(
+	chatRepo scrapperapp.ChatRepository,
+	linkRepo scrapperapp.LinkRepository,
+	githubRepo github.Repository,
+	githubClient github.Client,
+	log *zap.Logger,
+) *scrapperapp.TrackLinkService {
+	return scrapperapp.NewTrackLinkService(chatRepo, linkRepo, githubRepo, githubClient, log)
 }

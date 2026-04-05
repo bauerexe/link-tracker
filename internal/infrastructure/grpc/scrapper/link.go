@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"time"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -12,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -26,27 +24,24 @@ func (a *api) CreateLink(ctx context.Context, req *pbv1.CreateLinkRequest) (*pbv
 		return nil, err
 	}
 
-	if _, err = a.chatRepository.GetChatByID(ctx, chatID); err != nil {
+	createdLink, err := a.trackLinkService.CreateLink(
+		ctx,
+		chatID,
+		req.GetLink(),
+		req.GetTags(),
+		req.GetFilters(),
+	)
+	if err != nil {
 		if errors.Is(err, usecase.ErrChatNotFound) {
 			return nil, status.Errorf(codes.NotFound, "%s", err.Error())
 		}
-		a.log.Error("get chat failed", zap.Error(err))
-		return nil, status.Errorf(codes.Internal, "internal error")
-	}
-
-	createdLink, err := a.linkRepository.CreateLink(ctx, chatID, req.GetLink(), req.GetTags(), req.GetFilters())
-	if err != nil {
 		if errors.Is(err, usecase.ErrLinkAlreadyTracked) {
 			return nil, status.Errorf(codes.AlreadyExists, "%s", err.Error())
 		}
+
 		a.log.Error("create link failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
-
-	_ = a.linkRepository.SetURLState(ctx, createdLink.URL, domain.URLState{
-		LastCheckedAt: time.Now(),
-		LastUpdatedAt: time.Now(),
-	})
 
 	return &pbv1.LinkResponse{
 		Id:      int32(createdLink.ID),

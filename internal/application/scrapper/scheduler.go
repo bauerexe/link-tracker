@@ -3,7 +3,6 @@ package scrapperapp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -99,7 +98,6 @@ func (s *Scheduler) processURL(ctx context.Context, now time.Time, url string) {
 		s.Log.Debug("no checker for url", zap.String("url", url))
 		return
 	}
-	s.Log.Debug("picked checker", zap.String("url", url), zap.String("checker", fmt.Sprintf("%T", checker)))
 
 	st, since, ok := s.loadState(ctx, url)
 	if !ok {
@@ -114,6 +112,15 @@ func (s *Scheduler) processURL(ctx context.Context, now time.Time, url string) {
 	}
 
 	st.LastCheckedAt = now
+
+	if st.LastUpdatedAt.IsZero() {
+		if updatedAt.IsZero() {
+			updatedAt = now.UTC()
+		}
+		st.LastUpdatedAt = updatedAt
+		s.saveState(ctx, url, st)
+		return
+	}
 
 	if !updated {
 		s.saveState(ctx, url, st)

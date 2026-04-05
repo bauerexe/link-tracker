@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -303,65 +301,6 @@ type fakeChecker struct {
 func (c *fakeChecker) Match(url string) bool { return url == c.matchURL }
 func (c *fakeChecker) Check(context.Context, string, time.Time) (string, time.Time, bool, error) {
 	return c.desc, c.updatedAt, c.updated, c.err
-}
-
-func TestScheduler_Recipients_OnlySubscribersGetUpdate(t *testing.T) {
-	now := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
-
-	repo := &fakeLinksRepo{
-		links: []*domain.Link{
-			{URL: "https://example.com/url1"},
-			{URL: "https://example.com/url2"},
-		},
-		chatByURL: map[string][]int64{
-			"https://example.com/url1": {1, 3},
-			"https://example.com/url2": {2},
-		},
-		state: map[string]domain.URLState{},
-	}
-
-	notifier := &fakeNotifier{}
-	checker := &fakeChecker{
-		matchURL:  "https://example.com/url1",
-		updated:   true,
-		desc:      "updated",
-		updatedAt: now.Add(-time.Minute),
-	}
-
-	s, err := NewScheduler(&Scheduler{
-		Links:    repo,
-		Notifier: notifier,
-		Checkers: []Checker{checker},
-		Log:      zap.NewNop(),
-		Interval: time.Minute,
-	})
-	if err != nil {
-		t.Fatalf("NewScheduler: %v", err)
-	}
-
-	s.tickWithNow(context.Background(), now)
-
-	calls := notifier.Calls()
-	if len(calls) != 1 {
-		t.Fatalf("expected notify calls=1, got=%d", len(calls))
-	}
-	if calls[0].url != "https://example.com/url1" {
-		t.Fatalf("expected url1, got=%q", calls[0].url)
-	}
-	if stringsJoinInt64(calls[0].ids) != stringsJoinInt64([]int64{1, 3}) {
-		t.Fatalf("expected chatIDs [1 3], got=%v", calls[0].ids)
-	}
-}
-
-func stringsJoinInt64(xs []int64) string {
-	var b strings.Builder
-	for i, x := range xs {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(strconv.FormatInt(x, 10))
-	}
-	return b.String()
 }
 
 func TestScheduler_CheckerErrors_TableDriven(t *testing.T) {

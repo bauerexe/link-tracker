@@ -3,9 +3,9 @@ package github
 import "context"
 
 type Client interface {
-	GetRepo(ctx context.Context, owner, repo string) (Repo, error)
-	ListIssuesAfter(ctx context.Context, owner, repo string, afterNumber int) ([]Issue, error)
-	GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error)
+	GetRepo(ctx context.Context, owner, repo string) (*Repo, error)
+	ListIssuesAfter(ctx context.Context, owner, repo string, afterNumber int) ([]*Issue, error)
+	GetPullRequest(ctx context.Context, owner, repo string, number int) (*PullRequest, error)
 }
 
 type Repository interface {

@@ -13,16 +13,27 @@ type Repo struct {
 	IssuesURL       string    `json:"issues_url"`
 }
 
+type User struct {
+	Login   string `json:"login"`
+	HTMLURL string `json:"html_url"`
+}
 type Issue struct {
+	Number      int         `json:"number"`
+	Title       string      `json:"title"`
+	Body        string      `json:"body"`
+	HTMLURL     string      `json:"html_url"`
 	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	User        User        `json:"user"`
 	PullRequest PullRequest `json:"pull_request"`
 }
 
 type PullRequest struct {
-	URL string `json:"url"`
+	URL     string `json:"url"`
+	HTMLURL string `json:"html_url"`
 }
 
 type State struct {
 	LastRepoUpdated          *time.Time `db:"last_repo_updated_at"`
-	LastProcessesIssueNumber int        `db:"last_processes_issue_number"`
+	LastProcessedIssueNumber int        `db:"last_processed_issue_number"`
 }

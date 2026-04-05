@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
+	stackoverflow "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -44,10 +45,10 @@ func newScrapperServer(
 	log *zap.Logger,
 	chatRepo scrapperapp.ChatRepository,
 	linkRepo scrapperapp.LinkRepository,
+	trackLinkService *scrapperapp.TrackLinkService,
 ) pbv1.ScrapperServer {
-	return controller.New(log, chatRepo, linkRepo)
+	return controller.New(log, chatRepo, linkRepo, trackLinkService)
 }
-
 func newScrapperApp(
 	server pbv1.ScrapperServer,
 	log *zap.Logger,
@@ -61,14 +62,19 @@ func newBotNotifier(client pbv1.BotClient, log *zap.Logger) scrapperapp.BotNotif
 	return scrapperapp.NewGRPCBotNotifier(client, log)
 }
 
-func newCheckers(gc github.Client, gr github.Repository, log *zap.Logger,
+func newCheckers(gc github.Client, sc stackoverflow.Client, gr github.Repository, log *zap.Logger,
 ) []scrapperapp.Checker {
-	gChecker, err := github.NewGitHubChecker(gc, gr, log)
+	gitChecker, err := github.NewChecker(gc, gr, log)
 	if err != nil {
 		log.Error("error creating github checker", zap.Error(err))
 	}
+	stackChecker, err := stackoverflow.NewChecker(sc, log)
+	if err != nil {
+		log.Error("error creating stackoverflow checker", zap.Error(err))
+	}
 	return []scrapperapp.Checker{
-		gChecker,
+		gitChecker,
+		stackChecker,
 	}
 }
 

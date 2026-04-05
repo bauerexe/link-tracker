@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stakoverflow"
+	stackoverflow "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/scrapper/clients"
 	"go.uber.org/fx"
@@ -64,6 +64,6 @@ func newGitHubClient(httpClient *http.Client, cfg *config.ScrapperConfig, log *z
 	return clients.NewGitHubClient(httpClient, cfg.GitHubToken, log)
 }
 
-func newStackOverflowClient(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.Logger) stakoverflow.Client {
-	return clients.NewStackOverflowChecker(httpClient, cfg.StackExchangeKey, log)
+func newStackOverflowClient(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.Logger) stackoverflow.Client {
+	return clients.NewStackOverflowClient(httpClient, cfg.StackExchangeKey, log)
 }
