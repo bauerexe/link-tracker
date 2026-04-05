@@ -78,71 +78,23 @@ func (c *StackOverflowClient) GetQuestion(ctx context.Context, questionID string
 }
 
 func (c *StackOverflowClient) ListAnswers(ctx context.Context, questionID string) ([]stackoverflow.AnswerOrComment, error) {
-	apiURL := fmt.Sprintf(
-		"https://api.stackexchange.com/2.3/questions/%s/answers?site=%s&filter=withbody&sort=creation&order=desc",
-		questionID,
-		c.site,
-	)
-	if c.key != "" {
-		apiURL += "&key=" + c.key
-	}
-
-	resp, err := c.doRequest(ctx, apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			c.log.Warn("failed to close response body", zap.Error(cerr))
+	return c.listQuestionItems(ctx, questionID, "answers", func(dec *json.Decoder) ([]stackoverflow.AnswerOrComment, error) {
+		var apiResp stackoverflow.AnswerResponse
+		if err := dec.Decode(&apiResp); err != nil {
+			return nil, fmt.Errorf("decode answers response: %w", err)
 		}
-	}()
-
-	c.logResponse(resp)
-
-	if err = c.checkResponseStatus(resp, apiURL); err != nil {
-		return nil, err
-	}
-
-	var apiResp stackoverflow.AnswerResponse
-	if err = json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("decode answers response: %w", err)
-	}
-
-	return apiResp.Items, nil
+		return apiResp.Items, nil
+	})
 }
 
 func (c *StackOverflowClient) ListComments(ctx context.Context, questionID string) ([]stackoverflow.AnswerOrComment, error) {
-	apiURL := fmt.Sprintf(
-		"https://api.stackexchange.com/2.3/questions/%s/comments?site=%s&filter=withbody&sort=creation&order=desc",
-		questionID,
-		c.site,
-	)
-	if c.key != "" {
-		apiURL += "&key=" + c.key
-	}
-
-	resp, err := c.doRequest(ctx, apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			c.log.Warn("failed to close response body", zap.Error(cerr))
+	return c.listQuestionItems(ctx, questionID, "comments", func(dec *json.Decoder) ([]stackoverflow.AnswerOrComment, error) {
+		var apiResp stackoverflow.CommentResponse
+		if err := dec.Decode(&apiResp); err != nil {
+			return nil, fmt.Errorf("decode comments response: %w", err)
 		}
-	}()
-
-	c.logResponse(resp)
-
-	if err = c.checkResponseStatus(resp, apiURL); err != nil {
-		return nil, err
-	}
-
-	var apiResp stackoverflow.CommentResponse
-	if err = json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("decode comments response: %w", err)
-	}
-
-	return apiResp.Items, nil
+		return apiResp.Items, nil
+	})
 }
 
 func (c *StackOverflowClient) doRequest(ctx context.Context, apiURL string) (*http.Response, error) {
@@ -189,4 +141,44 @@ func (c *StackOverflowClient) checkResponseStatus(resp *http.Response, url strin
 	)
 
 	return fmt.Errorf("stackexchange api status: %s", resp.Status)
+}
+
+func (c *StackOverflowClient) listQuestionItems(
+	ctx context.Context,
+	questionID string,
+	resource string,
+	decode func(*json.Decoder) ([]stackoverflow.AnswerOrComment, error),
+) ([]stackoverflow.AnswerOrComment, error) {
+	apiURL := fmt.Sprintf(
+		"https://api.stackexchange.com/2.3/questions/%s/%s?site=%s&filter=withbody&sort=creation&order=desc",
+		questionID,
+		resource,
+		c.site,
+	)
+	if c.key != "" {
+		apiURL += "&key=" + c.key
+	}
+
+	resp, err := c.doRequest(ctx, apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			c.log.Warn("failed to close response body", zap.Error(cerr))
+		}
+	}()
+
+	c.logResponse(resp)
+
+	if err = c.checkResponseStatus(resp, apiURL); err != nil {
+		return nil, err
+	}
+
+	items, err := decode(json.NewDecoder(resp.Body))
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
 }
