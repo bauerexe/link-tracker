@@ -56,6 +56,12 @@ scrapper{
 
     db_access_type="sql"
     db_access_type = ${?DB_ACCESS_TYPE}
+    
+    batch_size = 100
+    batch_size = ${?BATCH_SIZE}
+
+    worker_count = 4
+    worker_count = ${?WORKER_COUNT}
 }
 ```
 ---
