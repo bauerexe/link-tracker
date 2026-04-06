@@ -2,6 +2,7 @@ package scrapperapp
 
 import (
 	"context"
+	"fmt"
 
 	"go.uber.org/zap"
 
@@ -27,7 +28,10 @@ func (n *GRPCBotNotifier) Notify(ctx context.Context, url, description string, c
 		TgChatIds:   chatIDs,
 	})
 	if err != nil && n.log != nil {
-		n.log.Error("UpdateLink failed", zap.Error(err))
+		if n.log != nil {
+			n.log.Error("UpdateLink failed", zap.Error(err))
+		}
+		return fmt.Errorf("notify err: %w", err)
 	}
 	return nil
 }

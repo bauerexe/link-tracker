@@ -88,11 +88,13 @@ func newScheduler(
 	interval := time.Duration(cfg.MinutesIntervalCheck) * time.Minute
 
 	s, err := scrapperapp.NewScheduler(&scrapperapp.Scheduler{
-		Links:    linkRepo,
-		Notifier: notifier,
-		Checkers: checkers,
-		Log:      log,
-		Interval: interval,
+		Links:       linkRepo,
+		Notifier:    notifier,
+		Checkers:    checkers,
+		Log:         log,
+		Interval:    interval,
+		BatchSize:   cfg.BatchSize,
+		WorkerCount: cfg.WorkerCount,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("new scheduler: %w", err)

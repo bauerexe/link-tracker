@@ -204,6 +204,10 @@ type fakeLinksRepo struct {
 	state     map[string]domain.URLState
 }
 
+func (r *fakeLinksRepo) ListLinksBatch(_ context.Context, _, _ int) ([]*domain.Link, error) {
+	return nil, nil
+}
+
 func (r *fakeLinksRepo) CreateLink(_ context.Context, _ int64, _ string, _, _ []string) (*domain.Link, error) {
 	return &domain.Link{}, nil
 }
@@ -354,7 +358,7 @@ func TestScheduler_CheckerErrors_TableDriven(t *testing.T) {
 				}
 			}()
 
-			s.tickWithNow(context.Background(), now)
+			s.tick(context.Background(), now)
 
 			calls := notifier.Calls()
 			if tt.wantNotify && len(calls) == 0 {

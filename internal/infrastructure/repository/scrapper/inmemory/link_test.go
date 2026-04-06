@@ -286,7 +286,7 @@ func TestLinkRepository_ListLinks(t *testing.T) {
 				tc.prepare(rp)
 			}
 
-			links, err := rp.ListLinks(tc.ctx())
+			links, err := rp.ListLinksBatch(tc.ctx(), 1000, 0)
 			if err != nil {
 				require.ErrorIs(t, err, tc.err)
 				assert.Nil(t, links)

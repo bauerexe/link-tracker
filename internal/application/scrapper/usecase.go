@@ -31,7 +31,7 @@ type LinkRepository interface {
 	GetLinksByChatID(ctx context.Context, ChatID int64) ([]*domain.Link, error)
 	DeleteLink(ctx context.Context, ChatID int64, URL string) (*domain.Link, error)
 
-	ListLinks(ctx context.Context) ([]*domain.Link, error)
+	ListLinksBatch(ctx context.Context, limit, offset int) ([]*domain.Link, error)
 	GetChatIDsByLink(ctx context.Context, url string) ([]int64, error)
 
 	GetURLState(ctx context.Context, url string) (domain.URLState, error)

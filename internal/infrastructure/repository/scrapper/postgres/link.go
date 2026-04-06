@@ -225,22 +225,25 @@ func (r *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 	}, nil
 }
 
-func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) {
+func (r *LinkRepository) ListLinksBatch(ctx context.Context, limit, offset int) ([]*domain.Link, error) {
 	sql, args, err := r.dialect.From("links").
 		Select("id", "url").
 		Order(goqu.C("url").Asc()).
+		Limit(uint(limit)).
+		Offset(uint(offset)).
 		ToSQL()
 	if err != nil {
-		return nil, fmt.Errorf("build query for list links: %w", err)
+		return nil, fmt.Errorf("build query for list links batch: %w", err)
 	}
 
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("query list links: %w", err)
+		return nil, fmt.Errorf("query list links batch: %w", err)
 	}
 	defer rows.Close()
 
-	var links []*domain.Link
+	links := make([]*domain.Link, 0, limit)
+
 	for rows.Next() {
 		var id int64
 		var url string
@@ -256,9 +259,8 @@ func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 		})
 	}
 
-	rowsErr := rows.Err()
-	if rowsErr != nil {
-		return nil, fmt.Errorf("iterate list links rows: %w", rowsErr)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate list links batch rows: %w", rowsErr)
 	}
 
 	return links, nil

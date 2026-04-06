@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -30,6 +31,9 @@ type repos struct {
 }
 
 func TestDBRepositories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("testcontainers rootless Docker is not supported on Windows")
+	}
 	if os.Getenv("CI") != "" && os.Getenv("DOCKER_HOST") == "" {
 		t.Skip("docker is not available in this job")
 	}
@@ -101,7 +105,7 @@ func TestDBRepositories(t *testing.T) {
 				require.Equal(t, "https://example.com", links[0].URL)
 				require.ElementsMatch(t, []string{"go", "db"}, links[0].Tags)
 
-				all, err := r.link.ListLinks(ctx)
+				all, err := r.link.ListLinksBatch(ctx, 1000, 0)
 				require.NoError(t, err)
 				require.Len(t, all, 1)
 				require.Equal(t, "https://example.com", all[0].URL)

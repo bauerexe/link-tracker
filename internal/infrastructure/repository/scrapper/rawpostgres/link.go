@@ -84,10 +84,11 @@ const (
 		WHERE id = $1
 	`
 
-	ListLinksSelect = `
+	ListLinksBatchSelect = `
 		SELECT id, url
 		FROM links
 		ORDER BY url
+		LIMIT $1 OFFSET $2
 	`
 
 	GetChatIDsByLinkSelect = `
@@ -317,14 +318,15 @@ func (r *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 	}, nil
 }
 
-func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) {
-	rows, err := r.pool.Query(ctx, ListLinksSelect)
+func (r *LinkRepository) ListLinksBatch(ctx context.Context, limit, offset int) ([]*domain.Link, error) {
+	rows, err := r.pool.Query(ctx, ListLinksBatchSelect, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("query list links: %w", err)
+		return nil, fmt.Errorf("query list links batch: %w", err)
 	}
 	defer rows.Close()
 
-	res := make([]*domain.Link, 0)
+	res := make([]*domain.Link, 0, limit)
+
 	for rows.Next() {
 		var linkID int64
 		var url string
@@ -340,9 +342,8 @@ func (r *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 		})
 	}
 
-	rowsErr := rows.Err()
-	if rowsErr != nil {
-		return nil, fmt.Errorf("iterate list links rows: %w", rowsErr)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterate list links batch rows: %w", rowsErr)
 	}
 
 	return res, nil

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -133,11 +134,18 @@ func (l *LinkRepository) DeleteLink(ctx context.Context, chatID int64, url strin
 	return link, nil
 }
 
-func (l *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) {
+func (l *LinkRepository) ListLinksBatch(ctx context.Context, limit, offset int) ([]*domain.Link, error) {
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("list links: context done: %w", ctx.Err())
+		return nil, fmt.Errorf("list links batch: context done: %w", ctx.Err())
 	default:
+	}
+
+	if limit <= 0 {
+		return []*domain.Link{}, nil
+	}
+	if offset < 0 {
+		return nil, errors.New("invalid offset")
 	}
 
 	l.mu.RLock()
@@ -149,8 +157,18 @@ func (l *LinkRepository) ListLinks(ctx context.Context) ([]*domain.Link, error) 
 	}
 	sort.Strings(urls)
 
-	res := make([]*domain.Link, 0, len(urls))
-	for _, url := range urls {
+	if offset >= len(urls) {
+		return []*domain.Link{}, nil
+	}
+
+	end := offset + limit
+	if end > len(urls) {
+		end = len(urls)
+	}
+
+	res := make([]*domain.Link, 0, end-offset)
+	for i := offset; i < end; i++ {
+		url := urls[i]
 		res = append(res, &domain.Link{
 			URL: url,
 		})
