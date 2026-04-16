@@ -148,7 +148,7 @@ func TestLinkRepository_GetLinksByChatID(t *testing.T) {
 				tc.prepare(rp)
 			}
 
-			links, err := rp.GetLinksByChatID(tc.ctx(), tc.chatID)
+			links, err := rp.GetLinksByChatID(tc.ctx(), tc.chatID, 100, 0)
 			if err != nil {
 				require.ErrorIs(t, err, tc.err)
 				assert.Nil(t, links)

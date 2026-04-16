@@ -67,7 +67,7 @@ func (l *LinkRepository) CreateLink(
 	return link, nil
 }
 
-func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]*domain.Link, error) {
+func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64, limit, offset uint64) ([]*domain.Link, error) {
 	select {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("get links by chat id: context done: %w", ctx.Err())
@@ -88,8 +88,17 @@ func (l *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 	}
 	sort.Strings(urls)
 
-	res := make([]*domain.Link, 0, len(chatLinks))
-	for _, url := range urls {
+	if offset >= uint64(len(urls)) {
+		return []*domain.Link{}, nil
+	}
+
+	end := offset + limit
+	if end > uint64(len(urls)) {
+		end = uint64(len(urls))
+	}
+
+	res := make([]*domain.Link, 0, end-offset)
+	for _, url := range urls[offset:end] {
 		res = append(res, chatLinks[url])
 	}
 

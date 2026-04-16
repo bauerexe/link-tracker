@@ -17,6 +17,22 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  flyway:
+    image: flyway/flyway:10
+    container_name: link-tracker-flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/link_tracker
+      FLYWAY_USER: postgres
+      FLYWAY_PASSWORD: postgres
+      FLYWAY_CONNECT_RETRIES: 60
+    command: migrate
+
   scrapper:
     build:
       context: .
@@ -27,6 +43,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
       - "50051:50051"

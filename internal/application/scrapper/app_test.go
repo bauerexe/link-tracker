@@ -210,7 +210,7 @@ func (r *fakeLinksRepo) CreateLink(_ context.Context, _ int64, _ string, _, _ []
 	return &domain.Link{}, nil
 }
 
-func (r *fakeLinksRepo) GetLinksByChatID(_ context.Context, _ int64) ([]*domain.Link, error) {
+func (r *fakeLinksRepo) GetLinksByChatID(_ context.Context, _ int64, _ uint64, _ uint64) ([]*domain.Link, error) {
 	return nil, nil
 }
 

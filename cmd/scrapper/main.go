@@ -51,7 +51,7 @@ func main() {
 			newCheckers,
 			newScheduler,
 		),
-		fx.Invoke(runMigrations, runScrapper, runScheduler),
+		fx.Invoke(runScrapper, runScheduler),
 	).Run()
 }
 
@@ -222,14 +222,6 @@ func newScheduler(
 		return nil, fmt.Errorf("new scheduler: %w", err)
 	}
 	return s, nil
-}
-
-func runMigrations(lc fx.Lifecycle, cfg *config.ScrapperConfig) {
-	lc.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			return db.RunMigrations(cfg.PostgresDSN, cfg.MigrationsPath)
-		},
-	})
 }
 
 func runScrapper(appCtx context.Context, lc fx.Lifecycle, scrapper *scrapperapp.Scrapper, log *zap.Logger) {

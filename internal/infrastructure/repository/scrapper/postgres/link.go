@@ -91,24 +91,44 @@ func (r *LinkRepository) CreateLink(
 	}, nil
 }
 
-func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]*domain.Link, error) {
+func (r *LinkRepository) GetLinksByChatID(
+	ctx context.Context,
+	chatID int64,
+	limit, offset uint64,
+) ([]*domain.Link, error) {
 	err := r.ensureChatExists(ctx, r.pool, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("ensure chat exists for chat_id=%d: %w", chatID, err)
 	}
 
-	sql, args, err := r.dialect.From(goqu.T("chat_links").As("cl")).
+	ds := r.dialect.
+		From(goqu.T("chat_links").As("cl")).
 		Join(
 			goqu.T("links").As("l"),
 			goqu.On(goqu.I("l.id").Eq(goqu.I("cl.link_id"))),
 		).
+		LeftJoin(
+			goqu.T("chat_link_tags").As("clt"),
+			goqu.On(goqu.I("clt.chat_link_id").Eq(goqu.I("cl.id"))),
+		).
+		LeftJoin(
+			goqu.T("tags").As("t"),
+			goqu.On(goqu.I("t.id").Eq(goqu.I("clt.tag_id"))),
+		).
 		Select(
 			goqu.I("cl.id"),
 			goqu.I("l.url"),
+			goqu.L(
+				"COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags",
+			),
 		).
 		Where(goqu.I("cl.chat_id").Eq(chatID)).
-		Order(goqu.I("l.url").Asc()).
-		ToSQL()
+		GroupBy(goqu.I("cl.id"), goqu.I("l.url")).
+		Order(goqu.I("cl.id").Asc()).
+		Limit(uint(limit)).
+		Offset(uint(offset))
+
+	sql, args, err := ds.ToSQL()
 	if err != nil {
 		return nil, fmt.Errorf("build query for links by chat_id=%d: %w", chatID, err)
 	}
@@ -123,15 +143,10 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 	for rows.Next() {
 		var id int64
 		var url string
+		var tags []string
 
-		scanErr := rows.Scan(&id, &url)
-		if scanErr != nil {
-			return nil, fmt.Errorf("scan link row for chat_id=%d: %w", chatID, scanErr)
-		}
-
-		tags, tagsErr := r.getTagsByChatLinkID(ctx, r.pool, id)
-		if tagsErr != nil {
-			return nil, fmt.Errorf("get tags by chat_link_id=%d: %w", id, tagsErr)
+		if err = rows.Scan(&id, &url, &tags); err != nil {
+			return nil, fmt.Errorf("scan link row for chat_id=%d: %w", chatID, err)
 		}
 
 		links = append(links, &domain.Link{
@@ -142,9 +157,8 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		})
 	}
 
-	rowsErr := rows.Err()
-	if rowsErr != nil {
-		return nil, fmt.Errorf("iterate links by chat_id=%d: %w", chatID, rowsErr)
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate links by chat_id=%d: %w", chatID, err)
 	}
 
 	return links, nil
