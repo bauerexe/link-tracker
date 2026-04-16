@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -31,9 +30,6 @@ type repos struct {
 }
 
 func TestDBRepositories(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("testcontainers rootless Docker is not supported on Windows")
-	}
 	if os.Getenv("CI") != "" && os.Getenv("DOCKER_HOST") == "" {
 		t.Skip("docker is not available in this job")
 	}
