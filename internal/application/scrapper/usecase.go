@@ -28,7 +28,7 @@ type ChatRepository interface {
 
 type LinkRepository interface {
 	CreateLink(ctx context.Context, ChatID int64, URL string, Tags, Filters []string) (*domain.Link, error)
-	GetLinksByChatID(ctx context.Context, ChatID int64) ([]*domain.Link, error)
+	GetLinksByChatID(ctx context.Context, chatID int64, limit, offset uint64) ([]*domain.Link, error)
 	DeleteLink(ctx context.Context, ChatID int64, URL string) (*domain.Link, error)
 
 	ListLinksBatch(ctx context.Context, limit, offset int) ([]*domain.Link, error)

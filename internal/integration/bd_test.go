@@ -99,7 +99,7 @@ func TestDBRepositories(t *testing.T) {
 				require.Equal(t, "https://example.com", created.URL)
 				require.ElementsMatch(t, []string{"go", "db"}, created.Tags)
 
-				links, err := r.link.GetLinksByChatID(ctx, 1)
+				links, err := r.link.GetLinksByChatID(ctx, 1, 100, 0)
 				require.NoError(t, err)
 				require.Len(t, links, 1)
 				require.Equal(t, "https://example.com", links[0].URL)
@@ -118,7 +118,7 @@ func TestDBRepositories(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, "https://example.com", deleted.URL)
 
-				links, err = r.link.GetLinksByChatID(ctx, 1)
+				links, err = r.link.GetLinksByChatID(ctx, 1, 100, 0)
 				require.NoError(t, err)
 				require.Empty(t, links)
 			})

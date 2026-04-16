@@ -52,11 +52,21 @@ const (
 		WHERE id = $1
 	`
 	GetLinksByChatIDSelectLinks = `
-		SELECT cl.id, l.url
+		SELECT
+			cl.id,
+			l.url,
+			COALESCE(
+				array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL),
+				'{}'
+			) AS tags
 		FROM chat_links cl
 		JOIN links l ON l.id = cl.link_id
+		LEFT JOIN chat_link_tags clt ON clt.chat_link_id = cl.id
+		LEFT JOIN tags t ON t.id = clt.tag_id
 		WHERE cl.chat_id = $1
-		ORDER BY l.url
+		GROUP BY cl.id, l.url
+		ORDER BY cl.id
+		LIMIT $2 OFFSET $3
 	`
 
 	DeleteLinkSelectChat = `
@@ -209,7 +219,7 @@ func (r *LinkRepository) CreateLink(
 	}, nil
 }
 
-func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]*domain.Link, error) {
+func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64, limit, offset uint64) ([]*domain.Link, error) {
 	var existingChatID int64
 	err := r.pool.QueryRow(ctx, GetLinksByChatIDSelectChat, chatID).Scan(&existingChatID)
 	if err != nil {
@@ -219,25 +229,20 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		return nil, fmt.Errorf("select chat id=%d: %w", chatID, err)
 	}
 
-	rows, err := r.pool.Query(ctx, GetLinksByChatIDSelectLinks, chatID)
+	rows, err := r.pool.Query(ctx, GetLinksByChatIDSelectLinks, chatID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query links by chat_id=%d: %w", chatID, err)
 	}
 	defer rows.Close()
 
-	res := make([]*domain.Link, 0)
+	res := make([]*domain.Link, 0, limit)
 	for rows.Next() {
 		var chatLinkID int64
 		var url string
+		var tags []string
 
-		scanErr := rows.Scan(&chatLinkID, &url)
-		if scanErr != nil {
-			return nil, fmt.Errorf("scan link row for chat_id=%d: %w", chatID, scanErr)
-		}
-
-		tags, tagsErr := r.getTagsByChatLinkID(ctx, chatLinkID)
-		if tagsErr != nil {
-			return nil, fmt.Errorf("get tags by chat_link_id=%d: %w", chatLinkID, tagsErr)
+		if err = rows.Scan(&chatLinkID, &url, &tags); err != nil {
+			return nil, fmt.Errorf("scan link row for chat_id=%d: %w", chatID, err)
 		}
 
 		res = append(res, &domain.Link{
@@ -248,9 +253,8 @@ func (r *LinkRepository) GetLinksByChatID(ctx context.Context, chatID int64) ([]
 		})
 	}
 
-	rowsErr := rows.Err()
-	if rowsErr != nil {
-		return nil, fmt.Errorf("iterate links by chat_id=%d: %w", chatID, rowsErr)
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate links by chat_id=%d: %w", chatID, err)
 	}
 
 	return res, nil
@@ -414,33 +418,6 @@ func (r *LinkRepository) SetURLState(ctx context.Context, url string, st domain.
 	}
 
 	return nil
-}
-
-func (r *LinkRepository) getTagsByChatLinkID(ctx context.Context, chatLinkID int64) ([]string, error) {
-	rows, err := r.pool.Query(ctx, GetTagsByChatLinkIDSelect, chatLinkID)
-	if err != nil {
-		return nil, fmt.Errorf("query tags by chat_link_id=%d: %w", chatLinkID, err)
-	}
-	defer rows.Close()
-
-	tags := make([]string, 0)
-	for rows.Next() {
-		var tag string
-
-		scanErr := rows.Scan(&tag)
-		if scanErr != nil {
-			return nil, fmt.Errorf("scan tag for chat_link_id=%d: %w", chatLinkID, scanErr)
-		}
-
-		tags = append(tags, tag)
-	}
-
-	rowsErr := rows.Err()
-	if rowsErr != nil {
-		return nil, fmt.Errorf("iterate tags by chat_link_id=%d: %w", chatLinkID, rowsErr)
-	}
-
-	return tags, nil
 }
 
 func (r *LinkRepository) getTagsByChatLinkIDTx(ctx context.Context, tx pgx.Tx, chatLinkID int64) ([]string, error) {

@@ -14,6 +14,8 @@ import (
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
+const batchSize uint64 = 100
+
 func (a *api) CreateLink(ctx context.Context, req *pbv1.CreateLinkRequest) (*pbv1.LinkResponse, error) {
 	if err := req.ValidateAll(); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "validation failed: %v", err)
@@ -69,16 +71,32 @@ func (a *api) GetLinks(ctx context.Context, req *pbv1.GetLinksRequest) (*pbv1.Li
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
-	gotLinks, err := a.linkRepository.GetLinksByChatID(ctx, chatID)
-	if err != nil {
-		if errors.Is(err, usecase.ErrChatNotFound) {
-			return &pbv1.ListLinksResponse{
-				Links: []*pbv1.LinkResponse{},
-				Size:  0,
-			}, nil
+	var (
+		offset   uint64
+		gotLinks []*domain.Link
+	)
+
+	for {
+		var batch []*domain.Link
+		batch, err = a.linkRepository.GetLinksByChatID(ctx, chatID, batchSize, offset)
+		if err != nil {
+			if errors.Is(err, usecase.ErrChatNotFound) {
+				return &pbv1.ListLinksResponse{
+					Links: []*pbv1.LinkResponse{},
+					Size:  0,
+				}, nil
+			}
+			a.log.Error("get links failed", zap.Error(err))
+			return nil, status.Errorf(codes.Internal, "internal error")
 		}
-		a.log.Error("get links failed", zap.Error(err))
-		return nil, status.Errorf(codes.Internal, "internal error")
+
+		gotLinks = append(gotLinks, batch...)
+
+		if len(batch) < int(batchSize) {
+			break
+		}
+
+		offset += batchSize
 	}
 
 	links := make([]*pbv1.LinkResponse, len(gotLinks))
