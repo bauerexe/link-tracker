@@ -1,1 +1,0 @@
-DROP TABLE github_sync_state;
