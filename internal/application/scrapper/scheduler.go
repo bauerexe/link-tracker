@@ -166,62 +166,13 @@ func (s *Scheduler) tick(parentCtx context.Context, now time.Time) {
 		failed []FailedLink
 	)
 
-enqueueLoop:
-	for offset := 0; ; offset += s.BatchSize {
-		if ctx.Err() != nil {
-			break
-		}
-
-		links, err := s.Links.ListLinksBatch(ctx, s.BatchSize, offset)
-		if err != nil {
-			s.Log.Error("list links batch failed", zap.Error(err))
-			break
-		}
-		if len(links) == 0 {
-			break
-		}
-
-		for _, link := range links {
-			if ctx.Err() != nil {
-				break enqueueLoop
-			}
-			if link == nil || link.URL == "" {
-				continue
-			}
-
-			url := link.URL
-
-			wg.Add(1)
-			select {
-			case <-ctx.Done():
-				wg.Done()
-				break enqueueLoop
-			case s.pool.Jobs <- func() {
-				defer wg.Done()
-
-				if procErr := s.processURL(ctx, now, url); procErr != nil {
-					mu.Lock()
-					failed = append(failed, FailedLink{
-						URL:   url,
-						Error: procErr.Error(),
-					})
-					mu.Unlock()
-				}
-			}:
-			}
-		}
-
-		if len(links) < s.BatchSize {
-			break
-		}
-	}
+	s.loadBatchesParallel(ctx, now, &wg, &mu, &failed)
 
 	wg.Wait()
 	s.setLastFailedLinks(failed)
 
 	if len(failed) > 0 {
 		s.notifyFailedLinks(ctx, failed)
-
 		s.Log.Warn("scheduler run finished with failed links",
 			zap.Int("failed_count", len(failed)),
 			zap.Any("failed_links", failed),
@@ -235,6 +186,98 @@ enqueueLoop:
 	}
 
 	s.Log.Info("scheduler run finished successfully")
+}
+
+func (s *Scheduler) loadBatchesParallel(
+	ctx context.Context,
+	now time.Time,
+	wg *sync.WaitGroup,
+	mu *sync.Mutex,
+	failed *[]FailedLink,
+) {
+	var loadWg sync.WaitGroup
+	loadSem := make(chan struct{}, s.WorkerCount)
+
+	for offset := 0; ; offset += s.BatchSize {
+		if ctx.Err() != nil {
+			break
+		}
+
+		loadSem <- struct{}{}
+		loadWg.Add(1)
+
+		go func(off int) {
+			defer loadWg.Done()
+			defer func() { <-loadSem }()
+
+			s.processBatch(ctx, now, off, wg, mu, failed)
+		}(offset)
+
+		if ctx.Err() != nil {
+			break
+		}
+	}
+
+	loadWg.Wait()
+}
+
+func (s *Scheduler) processBatch(
+	ctx context.Context,
+	now time.Time,
+	offset int,
+	wg *sync.WaitGroup,
+	mu *sync.Mutex,
+	failed *[]FailedLink,
+) {
+	links, err := s.Links.ListLinksBatch(ctx, s.BatchSize, offset)
+	if err != nil {
+		s.Log.Error("list links batch failed", zap.Error(err))
+		return
+	}
+	if len(links) == 0 {
+		return
+	}
+
+	for _, link := range links {
+		if ctx.Err() != nil {
+			return
+		}
+		if link == nil || link.URL == "" {
+			continue
+		}
+
+		url := link.URL
+
+		wg.Add(1)
+		select {
+		case <-ctx.Done():
+			wg.Done()
+			return
+		case s.pool.Jobs <- s.createLinkTask(ctx, now, url, wg, mu, failed):
+		}
+	}
+}
+
+func (s *Scheduler) createLinkTask(
+	ctx context.Context,
+	now time.Time,
+	url string,
+	wg *sync.WaitGroup,
+	mu *sync.Mutex,
+	failed *[]FailedLink,
+) func() {
+	return func() {
+		defer wg.Done()
+
+		if procErr := s.processURL(ctx, now, url); procErr != nil {
+			mu.Lock()
+			*failed = append(*failed, FailedLink{
+				URL:   url,
+				Error: procErr.Error(),
+			})
+			mu.Unlock()
+		}
+	}
 }
 
 func (s *Scheduler) processURL(ctx context.Context, now time.Time, url string) error {
