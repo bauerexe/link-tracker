@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -12,16 +13,10 @@ import (
 	"go.uber.org/zap"
 )
 
-type GitHubStateRepository interface {
-	CreateState(ctx context.Context, repoFullName string, state github.State) error
-	GetState(ctx context.Context, repoFullName string) (*github.State, error)
-	UpdateState(ctx context.Context, repoFullName string, state github.State) error
-}
-
 type TrackLinkService struct {
 	chatRepository   ChatRepository
 	linkRepository   LinkRepository
-	githubRepository GitHubStateRepository
+	githubRepository github.Repository
 	githubClient     github.Client
 	log              *zap.Logger
 }
@@ -33,7 +28,7 @@ const (
 func NewTrackLinkService(
 	chatRepository ChatRepository,
 	linkRepository LinkRepository,
-	githubRepository GitHubStateRepository,
+	githubRepository github.Repository,
 	githubClient github.Client,
 	log *zap.Logger,
 ) *TrackLinkService {
@@ -94,17 +89,21 @@ func (s *TrackLinkService) CreateLink(ctx context.Context, chatID int64, rawURL 
 }
 
 func parseGitHubRepo(raw string) (owner string, repo string, ok bool) {
-	const prefix = "https://github.com/"
-
-	switch {
-	case strings.HasPrefix(raw, prefix):
-		raw = strings.TrimPrefix(raw, prefix)
-	default:
+	u, err := url.Parse(raw)
+	if err != nil {
 		return "", "", false
 	}
 
-	parts := strings.Split(strings.Trim(raw, "/"), "/")
-	if len(parts) < matchParts {
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", "", false
+	}
+
+	if !strings.EqualFold(u.Host, "github.com") {
+		return "", "", false
+	}
+
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", false
 	}
 
