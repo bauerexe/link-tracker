@@ -21,10 +21,6 @@ type TrackLinkService struct {
 	log              *zap.Logger
 }
 
-const (
-	matchParts = 2
-)
-
 func NewTrackLinkService(
 	chatRepository ChatRepository,
 	linkRepository LinkRepository,
