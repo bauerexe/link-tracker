@@ -7,6 +7,7 @@ var Module = fx.Options(
 	LoggerModule,
 	DBModule,
 	HTTPModule,
+	KafkaModule,
 	GRPCModule,
 	RepositoryModule,
 	AppModule,

@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultInterval    = 2 * time.Minute
-	contextTimeout     = 30 * time.Second
+	contextTimeout     = 2 * time.Minute
 	saveCtxTimeout     = 5 * time.Second
 	sendCtxTimeout     = 10 * time.Second
 	defaultBatchSize   = 100
@@ -166,7 +166,7 @@ func (s *Scheduler) tick(parentCtx context.Context, now time.Time) {
 		failed []FailedLink
 	)
 
-	s.loadBatchesParallel(ctx, now, &wg, &mu, &failed)
+	s.loadBatches(ctx, now, &wg, &mu, &failed)
 
 	wg.Wait()
 	s.setLastFailedLinks(failed)
@@ -188,72 +188,36 @@ func (s *Scheduler) tick(parentCtx context.Context, now time.Time) {
 	s.Log.Info("scheduler run finished successfully")
 }
 
-func (s *Scheduler) loadBatchesParallel(
+func (s *Scheduler) loadBatches(
 	ctx context.Context,
 	now time.Time,
 	wg *sync.WaitGroup,
 	mu *sync.Mutex,
 	failed *[]FailedLink,
 ) {
-	var loadWg sync.WaitGroup
-	loadSem := make(chan struct{}, s.WorkerCount)
-
 	for offset := 0; ; offset += s.BatchSize {
-		if ctx.Err() != nil {
-			break
-		}
-
-		loadSem <- struct{}{}
-		loadWg.Add(1)
-
-		go func(off int) {
-			defer loadWg.Done()
-			defer func() { <-loadSem }()
-
-			s.processBatch(ctx, now, off, wg, mu, failed)
-		}(offset)
-
-		if ctx.Err() != nil {
-			break
-		}
-	}
-
-	loadWg.Wait()
-}
-
-func (s *Scheduler) processBatch(
-	ctx context.Context,
-	now time.Time,
-	offset int,
-	wg *sync.WaitGroup,
-	mu *sync.Mutex,
-	failed *[]FailedLink,
-) {
-	links, err := s.Links.ListLinksBatch(ctx, s.BatchSize, offset)
-	if err != nil {
-		s.Log.Error("list links batch failed", zap.Error(err))
-		return
-	}
-	if len(links) == 0 {
-		return
-	}
-
-	for _, link := range links {
-		if ctx.Err() != nil {
+		links, err := s.Links.ListLinksBatch(ctx, s.BatchSize, offset)
+		if err != nil {
+			s.Log.Error("list links batch failed", zap.Error(err))
 			return
 		}
-		if link == nil || link.URL == "" {
-			continue
+
+		if len(links) == 0 {
+			return
 		}
 
-		url := link.URL
+		for _, link := range links {
+			if link == nil || link.URL == "" {
+				continue
+			}
 
-		wg.Add(1)
-		select {
-		case <-ctx.Done():
-			wg.Done()
-			return
-		case s.pool.Jobs <- s.createLinkTask(ctx, now, url, wg, mu, failed):
+			wg.Add(1)
+			select {
+			case <-ctx.Done():
+				wg.Done()
+				return
+			case s.pool.Jobs <- s.createLinkTask(ctx, now, link.URL, wg, mu, failed):
+			}
 		}
 	}
 }

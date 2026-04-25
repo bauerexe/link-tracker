@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/IBM/sarama"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -45,4 +47,24 @@ func newBotConn(
 
 func newBotClient(conn *grpc.ClientConn) pbv1.BotClient {
 	return pbv1.NewBotClient(conn)
+}
+
+var KafkaModule = fx.Options(
+	fx.Provide(
+		newCfgSarama,
+		newProducerScrapperToBot,
+	),
+)
+
+func newCfgSarama() (*sarama.Config, error) {
+	cfg := kafka.New()
+	return cfg, nil
+}
+
+func newProducerScrapperToBot(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap.Logger) (*kafka.ProducerScrapperToBot, error) {
+	producer, err := kafka.NewProducer(cfgKafka, cfgSarama, log)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer: %w", err)
+	}
+	return producer, nil
 }

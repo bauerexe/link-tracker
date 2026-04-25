@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
-	stackoverflow "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -58,8 +59,14 @@ func newScrapperApp(
 	return &sa
 }
 
-func newBotNotifier(client pbv1.BotClient, log *zap.Logger) scrapperapp.BotNotifier {
+func newBotNotifier(client pbv1.BotClient, producer *kafka.ProducerScrapperToBot, log *zap.Logger, cfgKafka config.KafkaConfig) scrapperapp.BotNotifier {
+	if cfgKafka.KafkaEnabled {
+		log.Info("starting bot notifier by producer kafka")
+		return scrapperapp.NewKafkaBotNotifier(producer, log)
+	}
+	log.Info("starting bot notifier by gRPC")
 	return scrapperapp.NewGRPCBotNotifier(client, log)
+
 }
 
 func newCheckers(gc github.Client, sc stackoverflow.Client, gr github.Repository, log *zap.Logger,

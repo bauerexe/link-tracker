@@ -16,14 +16,17 @@ var ConfigModule = fx.Options(
 	),
 )
 
-func newConfig(log *zap.Logger) (*config.ScrapperConfig, error) {
+func newConfig(log *zap.Logger) (*config.ScrapperConfig, config.KafkaConfig, error) {
 	fs := afero.NewOsFs()
 
 	cfg, err := config.NewScrapperConfig(fs)
 	if err != nil {
-		return nil, fmt.Errorf("init config: %w", err)
+		return nil, config.KafkaConfig{}, fmt.Errorf("init config: %w", err)
 	}
-
+	cfgKafka, err := config.NewKafkaConfig(fs)
+	if err != nil {
+		return nil, config.KafkaConfig{}, fmt.Errorf("load kafka config: %w", err)
+	}
 	log.Info("init config")
-	return &cfg, nil
+	return &cfg, cfgKafka, nil
 }
