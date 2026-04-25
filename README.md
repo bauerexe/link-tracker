@@ -16,7 +16,7 @@ bot{
     app_telegram_token = "PUT_YOUR_TOKEN"
     app_telegram_token = ${?APP_TELEGRAM_TOKEN}
 
-    scrapper_addr_grpc = "0.0.0.0:50051"
+    scrapper_addr_grpc = "scrapper:50051"
     scrapper_addr_grpc = ${?SCRAPPER_ADDR_GRPC}
 
     bot_addr_grpc = "0.0.0.0:50052"
@@ -36,13 +36,13 @@ scrapper{
     scrapper_addr_http = "0.0.0.0:8080"
     scrapper_addr_http = ${?SCRAPPER_ADDR_HTTP}
 
-    bot_addr_grpc = "0.0.0.0:50052"
+    bot_addr_grpc = "bot:50052"
     bot_addr_grpc = ${?BOT_ADDR_GRPC}
 
-    github_token = "PUT_YOUR_TOKEN"
+    github_token = ""
     github_token = ${?GITHUB_TOKEN}
 
-    stack_overflow_key = "PUT_YOUR_TOKEN"
+    stack_overflow_key = ""
     stack_overflow_key = ${?STACK_OVERFLOW_KEY}
 
     minutes_interval_check = 1
@@ -54,14 +54,31 @@ scrapper{
     migrations_path ="/app/migrations"
     migrations_path = ${?MIGRATIONS_PATH}
 
-    db_access_type="sql"
+    db_access_type="orm"
     db_access_type = ${?DB_ACCESS_TYPE}
-    
+
     batch_size = 100
     batch_size = ${?BATCH_SIZE}
 
     worker_count = 4
     worker_count = ${?WORKER_COUNT}
+}
+kafka{
+    kafka_enabled="true"
+    kafka_enabled=${?KAFKA_ENABLED}
+
+    kafka_topic="notifiers"
+    kafka_topic=${?KAFKA_TOPIC}
+
+    kafka_consumer_group="notifiers-consumer"
+    kafka_consumer_group=${?KAFKA_CONSUMER_GROUP}
+
+    kafka_brokers = [
+      "kafka-1:19092",
+      "kafka-2:19092",
+      "kafka-3:19092"
+    ]
+    kafka_brokers=${?KAFKA_BROKERS}
 }
 ```
 ---
