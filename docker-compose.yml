@@ -122,7 +122,6 @@ services:
   init-kafka:
     image: confluentinc/cp-kafka:7.3.2
     container_name: init_kafka
-    entrypoint: ["/bin/bash", "-c"]
     depends_on:
       kafka-1:
         condition: service_healthy
@@ -130,12 +129,65 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
-    command: |
-      kafka-topics --create --if-not-exists \
-        --topic notifiers \
-        --partitions 3 \
-        --replication-factor 3 \
-        --bootstrap-server kafka-1:19092
+    entrypoint: /bin/bash
+    command:
+      - -ec
+      - |
+        kafka-topics --bootstrap-server kafka-1:19092 \
+          --create \
+          --if-not-exists \
+          --topic notifiers \
+          --partitions 3 \
+          --replication-factor 3
+
+        kafka-topics --bootstrap-server kafka-1:19092 \
+          --describe \
+          --topic notifiers
+
+        echo "kafka topic created"
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.3.2
+    container_name: schema-registry
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka-1:19092,PLAINTEXT://kafka-2:19092,PLAINTEXT://kafka-3:19092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8081/subjects || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  init-schema:
+    image: badouralix/curl-jq
+    depends_on:
+      schema-registry:
+        condition: service_healthy
+    volumes:
+      - ./schemas/update_link_request.avsc:/schemas/update_link_request.avsc:ro
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        jq -Rs '{schema: .}' /schemas/update_link_request.avsc > /tmp/schema.json
+
+        curl -f -s -X POST http://schema-registry:8081/subjects/update_link_request/versions \
+          -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+          --data @/tmp/schema.json
+
+        curl -f -s http://schema-registry:8081/subjects/update_link_request/versions/latest
+
+        echo "schema registered"
   scrapper:
     build:
       context: .
@@ -146,6 +198,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-schema:
+        condition: service_completed_successfully
       flyway:
         condition: service_completed_successfully
     dns:
@@ -163,7 +217,12 @@ services:
     volumes:
       - ./app.env:/app/app.env:ro
     depends_on:
-      - scrapper
+      init-schema:
+        condition: service_completed_successfully
+      init-kafka:
+        condition: service_completed_successfully
+      scrapper:
+        condition: service_started
     dns:
       - 8.8.8.8
       - 1.1.1.1

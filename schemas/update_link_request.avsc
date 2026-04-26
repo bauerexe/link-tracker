@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "UpdateLinkRequest",
+  "namespace": "linktracker.kafka",
+  "fields": [
+    { "name": "id", "type": "long", "default": 0 },
+    { "name": "url", "type": "string" },
+    { "name": "description", "type": "string", "default": "" },
+    {
+      "name": "tgChatIds",
+      "type": {
+        "type": "array",
+        "items": "long"
+      }
+    }
+  ]
+}

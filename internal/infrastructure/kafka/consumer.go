@@ -5,18 +5,21 @@ import (
 	"fmt"
 
 	"github.com/IBM/sarama"
+	"github.com/riferrei/srclient"
 	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"go.uber.org/zap"
 )
 
 type ConsumerBotFromScrapper struct {
-	consumer  sarama.ConsumerGroup
-	CfgKafka  config.KafkaConfig
-	CfgSarama *sarama.Config
-	Messages  chan *sarama.ProducerMessage
-	log       *zap.Logger
-	bot       botapp.BotGateway
+	consumer    sarama.ConsumerGroup
+	CfgKafka    config.KafkaConfig
+	CfgSarama   *sarama.Config
+	Messages    chan *sarama.ProducerMessage
+	log         *zap.Logger
+	bot         botapp.BotGateway
+	dlqProducer sarama.SyncProducer
+	codec       *AvroCodec
 }
 
 func NewConsumer(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap.Logger, bot botapp.BotGateway) (*ConsumerBotFromScrapper, error) {
@@ -27,13 +30,30 @@ func NewConsumer(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap
 	if err != nil {
 		return nil, fmt.Errorf("error creating consumer group: %w", err)
 	}
+	dlqProducer, err := sarama.NewSyncProducer(cfgKafka.KafkaBrokers, cfgSarama)
+	if err != nil {
+		_ = consumer.Close()
+		return nil, fmt.Errorf("error creating dlq producer: %w", err)
+	}
+	schemaRegistryClient := srclient.NewSchemaRegistryClient(cfgKafka.SchemaRegistryURL)
+	schema, err := schemaRegistryClient.GetLatestSchema(cfgKafka.SchemaSubject)
+	if err != nil {
+		return nil, fmt.Errorf("get avro schema from registry: %w", err)
+	}
+	codec, err := NewAvroCodec(schema.Schema())
+	if err != nil {
+		_ = consumer.Close()
+		return nil, fmt.Errorf("error creating avro codec: %w", err)
+	}
 	return &ConsumerBotFromScrapper{
-		consumer:  consumer,
-		CfgKafka:  cfgKafka,
-		CfgSarama: cfgSarama,
-		Messages:  nil,
-		log:       log,
-		bot:       bot,
+		consumer:    consumer,
+		CfgKafka:    cfgKafka,
+		CfgSarama:   cfgSarama,
+		Messages:    nil,
+		log:         log,
+		bot:         bot,
+		dlqProducer: dlqProducer,
+		codec:       codec,
 	}, nil
 }
 
@@ -46,7 +66,14 @@ func (c *ConsumerBotFromScrapper) Run(ctx context.Context) error {
 		c.log.Info("kafka consumer disabled; skip run")
 		return nil
 	}
-	handler := NewHandler(c.log, c.bot)
+	handler := NewHandler(
+		c.log,
+		c.bot,
+		c.dlqProducer,
+		c.CfgKafka.DLQTopic,
+		c.CfgKafka.MaxRetries,
+		c.codec,
+	)
 
 	for {
 		if err := c.consumer.Consume(ctx, []string{c.CfgKafka.KafkaTopic}, handler); err != nil {

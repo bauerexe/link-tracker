@@ -496,7 +496,7 @@ func mustStartE2EEnv(t *testing.T) *e2eEnv {
 	mustNoErr(t, err)
 	botPort, err := bot.MappedPort(ctx, "8082/tcp")
 	mustNoErr(t, err)
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 	return &e2eEnv{
 		BotBaseURL:      fmt.Sprintf("http://%s:%s", scrOrLocalhost(botHost), botPort.Port()),
 		ScrapperBaseURL: fmt.Sprintf("http://%s:%s", scrOrLocalhost(scrHost), scrPort.Port()),

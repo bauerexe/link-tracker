@@ -61,7 +61,6 @@ WHERE url = 'https://stackoverflow.com/questions/11227809/why-is-processing-a-so
 		if strings.Contains(logs, "dummy telegram message sent") {
 			return
 		}
-
 	}
 
 	env.DumpLogs(t)
@@ -71,11 +70,13 @@ WHERE url = 'https://stackoverflow.com/questions/11227809/why-is-processing-a-so
 type e2eKafkaEnv struct {
 	*e2eEnv
 
-	postgres  testcontainers.Container
-	flyway    testcontainers.Container
-	zookeeper testcontainers.Container
-	kafka1    testcontainers.Container
-	initKafka testcontainers.Container
+	postgres       testcontainers.Container
+	flyway         testcontainers.Container
+	zookeeper      testcontainers.Container
+	kafka1         testcontainers.Container
+	initKafka      testcontainers.Container
+	schemaRegistry testcontainers.Container
+	initSchema     testcontainers.Container
 }
 
 func (e *e2eKafkaEnv) Close(t *testing.T) {
@@ -88,6 +89,12 @@ func (e *e2eKafkaEnv) Close(t *testing.T) {
 	}
 	if e.scrapper != nil {
 		_ = e.scrapper.Terminate(ctx)
+	}
+	if e.initSchema != nil {
+		_ = e.initSchema.Terminate(ctx)
+	}
+	if e.schemaRegistry != nil {
+		_ = e.schemaRegistry.Terminate(ctx)
 	}
 	if e.initKafka != nil {
 		_ = e.initKafka.Terminate(ctx)
@@ -110,9 +117,12 @@ func (e *e2eKafkaEnv) Close(t *testing.T) {
 }
 
 const (
-	kafkaAlias = "kafka-1"
-	kafkaAddr  = "kafka-1:19092"
-	topicName  = "notifiers"
+	kafkaAlias        = "kafka-1"
+	kafkaAddr         = "kafka-1:19092"
+	topicName         = "notifiers"
+	dlqTopicName      = "notifiers-dlq"
+	schemaRegistryURL = "http://schema-registry:8081"
+	schemaSubject     = "update_link_request"
 )
 
 func mustStartE2EEnvKafka(t *testing.T) *e2eKafkaEnv {
@@ -134,9 +144,10 @@ func mustStartE2EEnvKafka(t *testing.T) *e2eKafkaEnv {
 	}}
 
 	var (
-		pg, flyway testcontainers.Container
-		zk, kafka1 testcontainers.Container
-		initKafka  testcontainers.Container
+		pg, flyway                 testcontainers.Container
+		zk, kafka1                 testcontainers.Container
+		initKafka                  testcontainers.Container
+		schemaRegistry, initSchema testcontainers.Container
 	)
 
 	errCh := make(chan error, 2)
@@ -176,6 +187,18 @@ func mustStartE2EEnvKafka(t *testing.T) *e2eKafkaEnv {
 			return
 		}
 
+		schemaRegistry, err = startSchemaRegistry(ctx, networkName)
+		if err != nil {
+			errCh <- fmt.Errorf("start schema registry: %w", err)
+			return
+		}
+
+		initSchema, err = startInitSchema(ctx, root, networkName)
+		if err != nil {
+			errCh <- fmt.Errorf("init schema: %w", err)
+			return
+		}
+
 		errCh <- nil
 	}()
 
@@ -185,8 +208,8 @@ func mustStartE2EEnvKafka(t *testing.T) *e2eKafkaEnv {
 		}
 	}
 
-	scr := startScrapper(ctx, t, root, networkName, commonFiles, pg, flyway, zk, kafka1, initKafka)
-	bot := startBot(ctx, t, root, networkName, commonFiles, scr)
+	scr := startScrapper(ctx, t, root, networkName, commonFiles, pg, flyway, zk, kafka1, initKafka, schemaRegistry, initSchema)
+	bot := startBot(ctx, t, root, networkName, commonFiles, scr, schemaRegistry, initSchema)
 
 	scrHost, err := scr.Host(ctx)
 	mustNoErr(t, err)
@@ -208,11 +231,13 @@ func mustStartE2EEnvKafka(t *testing.T) *e2eKafkaEnv {
 			http:            httpClient,
 			projectRoot:     root,
 		},
-		postgres:  pg,
-		flyway:    flyway,
-		zookeeper: zk,
-		kafka1:    kafka1,
-		initKafka: initKafka,
+		postgres:       pg,
+		flyway:         flyway,
+		zookeeper:      zk,
+		kafka1:         kafka1,
+		initKafka:      initKafka,
+		schemaRegistry: schemaRegistry,
+		initSchema:     initSchema,
 	}
 }
 
@@ -234,6 +259,7 @@ func containerLogs(t *testing.T, c testcontainers.Container, name string) string
 
 	return string(b)
 }
+
 func execPostgres(t *testing.T, pg testcontainers.Container, query string) {
 	t.Helper()
 
@@ -255,12 +281,66 @@ func execPostgres(t *testing.T, pg testcontainers.Container, query string) {
 	}
 }
 
+func startSchemaRegistry(ctx context.Context, networkName string) (testcontainers.Container, error) {
+	req := testcontainers.ContainerRequest{
+		Image:        "confluentinc/cp-schema-registry:7.3.2",
+		ExposedPorts: []string{"8081/tcp"},
+		Networks:     []string{networkName},
+		NetworkAliases: map[string][]string{
+			networkName: {"schema-registry"},
+		},
+		Env: map[string]string{
+			"SCHEMA_REGISTRY_HOST_NAME":                    "schema-registry",
+			"SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS": "PLAINTEXT://kafka-1:19092",
+			"SCHEMA_REGISTRY_LISTENERS":                    "http://0.0.0.0:8081",
+		},
+		WaitingFor: wait.ForHTTP("/subjects").
+			WithPort("8081/tcp").
+			WithStartupTimeout(60 * time.Second),
+	}
+
+	return testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+}
+
+func startInitSchema(ctx context.Context, root, networkName string) (testcontainers.Container, error) {
+	req := testcontainers.ContainerRequest{
+		Image:    "curlimages/curl:8.7.1",
+		Networks: []string{networkName},
+		Files: []testcontainers.ContainerFile{
+			{
+				HostFilePath:      filepath.Join(root, "schemas", "update_link_request.avsc"),
+				ContainerFilePath: "/schemas/update_link_request.avsc",
+				FileMode:          0o644,
+			},
+		},
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd: []string{`
+SCHEMA=$(cat /schemas/update_link_request.avsc | tr -d '\r\n' | sed 's/"/\\"/g')
+
+curl -f -s -X POST http://schema-registry:8081/subjects/update_link_request/versions \
+  -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  -d "{\"schema\":\"$SCHEMA\"}"
+
+echo "schema registered"
+`},
+		WaitingFor: wait.ForExit().WithExitTimeout(30 * time.Second),
+	}
+
+	return testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+}
+
 func startScrapper(
 	ctx context.Context,
 	t *testing.T,
 	root, networkName string,
 	commonFiles []testcontainers.ContainerFile,
-	pg, flyway, zk, kafka1, initKafka testcontainers.Container,
+	pg, flyway, zk, kafka1, initKafka, schemaRegistry, initSchema testcontainers.Container,
 ) testcontainers.Container {
 	t.Helper()
 
@@ -291,9 +371,11 @@ func startScrapper(
 			"GITHUB_TOKEN":           "",
 			"STACK_OVERFLOW_KEY":     "",
 
-			"KAFKA_ENABLED": "true",
-			"KAFKA_BROKERS": kafkaAddr,
-			"KAFKA_TOPIC":   topicName,
+			"KAFKA_ENABLED":       "true",
+			"KAFKA_BROKERS":       kafkaAddr,
+			"KAFKA_TOPIC":         topicName,
+			"SCHEMA_REGISTRY_URL": schemaRegistryURL,
+			"SCHEMA_SUBJECT":      schemaSubject,
 		},
 	}
 
@@ -309,6 +391,8 @@ func startScrapper(
 		dumpContainerLogs(ctx, t, zk, "zookeeper")
 		dumpContainerLogs(ctx, t, kafka1, "kafka-1")
 		dumpContainerLogs(ctx, t, initKafka, "init-kafka")
+		dumpContainerLogs(ctx, t, schemaRegistry, "schema-registry")
+		dumpContainerLogs(ctx, t, initSchema, "init-schema")
 		dumpContainerLogs(ctx, t, c, "scrapper")
 		t.Fatalf("start scrapper container: %v", err)
 	}
@@ -321,7 +405,7 @@ func startBot(
 	t *testing.T,
 	root, networkName string,
 	commonFiles []testcontainers.ContainerFile,
-	scr testcontainers.Container,
+	scr, schemaRegistry, initSchema testcontainers.Container,
 ) testcontainers.Container {
 	t.Helper()
 
@@ -354,6 +438,10 @@ func startBot(
 			"KAFKA_BROKERS":        kafkaAddr,
 			"KAFKA_TOPIC":          topicName,
 			"KAFKA_CONSUMER_GROUP": "notifiers-consumer",
+			"KAFKA_DLQ_TOPIC":      dlqTopicName,
+			"KAFKA_MAX_RETRIES":    "3",
+			"SCHEMA_REGISTRY_URL":  schemaRegistryURL,
+			"SCHEMA_SUBJECT":       schemaSubject,
 		},
 	}
 
@@ -365,6 +453,8 @@ func startBot(
 
 	if err = c.Start(ctx); err != nil {
 		dumpContainerLogs(ctx, t, scr, "scrapper")
+		dumpContainerLogs(ctx, t, schemaRegistry, "schema-registry")
+		dumpContainerLogs(ctx, t, initSchema, "init-schema")
 		dumpContainerLogs(ctx, t, c, "bot")
 		t.Fatalf("start bot container: %v", err)
 	}

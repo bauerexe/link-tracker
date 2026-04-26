@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/IBM/sarama"
+	"github.com/riferrei/srclient"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 )
 
 type GRPCBotNotifier struct {
@@ -41,30 +41,49 @@ func (n *GRPCBotNotifier) Notify(ctx context.Context, url, description string, c
 type KafkaBotNotifier struct {
 	producer *kafka.ProducerScrapperToBot
 	log      *zap.Logger
+	avro     *kafka.AvroCodec
 }
 
-func NewKafkaBotNotifier(producer *kafka.ProducerScrapperToBot, log *zap.Logger) *KafkaBotNotifier {
+func NewKafkaBotNotifier(producer *kafka.ProducerScrapperToBot, log *zap.Logger) (*KafkaBotNotifier, error) {
 	if log != nil {
 		log = log.Named("bot_notifier")
 	}
-	return &KafkaBotNotifier{producer: producer, log: log}
+
+	client := srclient.NewSchemaRegistryClient(producer.CfgKafka.SchemaRegistryURL)
+
+	schema, err := client.GetLatestSchema(producer.CfgKafka.SchemaSubject)
+	if err != nil {
+		return nil, fmt.Errorf("get latest avro schema: %w", err)
+	}
+
+	codec, err := kafka.NewAvroCodec(schema.Schema())
+	if err != nil {
+		return nil, fmt.Errorf("create avro codec: %w", err)
+	}
+
+	return &KafkaBotNotifier{
+		producer: producer,
+		log:      log,
+		avro:     codec,
+	}, nil
 }
 
 func (n *KafkaBotNotifier) Notify(_ context.Context, url, description string, chatIDs []int64) error {
-	msg := &pbv1.UpdateLinkRequest{
-		Url:         url,
+	msg := kafka.UpdateLinkAvro{
+		URL:         url,
 		Description: description,
-		TgChatIds:   chatIDs,
+		TgChatIDs:   chatIDs,
 	}
 
-	value, err := proto.Marshal(msg)
+	value, err := n.avro.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("marshal updateLinkRequest failed: %w", err)
+		return fmt.Errorf("marshal avro updateLinkRequest failed: %w", err)
 	}
 
 	n.producer.Messages <- &sarama.ProducerMessage{
 		Topic: n.producer.CfgKafka.KafkaTopic,
 		Value: sarama.ByteEncoder(value),
 	}
+
 	return nil
 }

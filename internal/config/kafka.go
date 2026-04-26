@@ -13,6 +13,10 @@ type KafkaConfig struct {
 	KafkaConsumerGroup string   `config:"kafka_consumer_group"`
 	KafkaBrokers       []string `config:"kafka_brokers"`
 	KafkaEnabled       bool     `config:"kafka_enabled"`
+	MaxRetries         int      `config:"max_retries"`
+	DLQTopic           string   `config:"dlq_topic"`
+	SchemaRegistryURL  string   `config:"schema_registry_url"`
+	SchemaSubject      string   `config:"schema_subject"`
 }
 
 func NewKafkaConfig(fs afero.Fs) (KafkaConfig, error) {

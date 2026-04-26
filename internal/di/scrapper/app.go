@@ -59,14 +59,21 @@ func newScrapperApp(
 	return &sa
 }
 
-func newBotNotifier(client pbv1.BotClient, producer *kafka.ProducerScrapperToBot, log *zap.Logger, cfgKafka config.KafkaConfig) scrapperapp.BotNotifier {
+func newBotNotifier(
+	client pbv1.BotClient,
+	producer *kafka.ProducerScrapperToBot,
+	log *zap.Logger,
+	cfgKafka config.KafkaConfig,
+) (scrapperapp.BotNotifier, error) {
 	if cfgKafka.KafkaEnabled {
-		log.Info("starting bot notifier by producer kafka")
-		return scrapperapp.NewKafkaBotNotifier(producer, log)
+		notify, err := scrapperapp.NewKafkaBotNotifier(producer, log)
+		if err != nil {
+			return nil, fmt.Errorf("new kafka bot notifier: %w", err)
+		}
+		return notify, nil
 	}
-	log.Info("starting bot notifier by gRPC")
-	return scrapperapp.NewGRPCBotNotifier(client, log)
 
+	return scrapperapp.NewGRPCBotNotifier(client, log), nil
 }
 
 func newCheckers(gc github.Client, sc stackoverflow.Client, gr github.Repository, log *zap.Logger,
