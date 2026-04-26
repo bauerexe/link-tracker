@@ -61,7 +61,7 @@ func runProducer(
 	}
 
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
+		OnStart: func(_ context.Context) error {
 			log.Info("starting kafka producer")
 
 			go func() {
@@ -72,7 +72,7 @@ func runProducer(
 
 			return nil
 		},
-		OnStop: func(ctx context.Context) error {
+		OnStop: func(_ context.Context) error {
 			close(producer.Messages)
 			return nil
 		},

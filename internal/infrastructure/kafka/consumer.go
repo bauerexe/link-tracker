@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/IBM/sarama"
 	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
@@ -38,7 +37,15 @@ func NewConsumer(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap
 	}, nil
 }
 
+func NewNoopConsumer(log *zap.Logger) *ConsumerBotFromScrapper {
+	return &ConsumerBotFromScrapper{log: log}
+}
+
 func (c *ConsumerBotFromScrapper) Run(ctx context.Context) error {
+	if c.consumer == nil {
+		c.log.Info("kafka consumer disabled; skip run")
+		return nil
+	}
 	handler := NewHandler(c.log, c.bot)
 
 	for {
@@ -56,23 +63,5 @@ func (c *ConsumerBotFromScrapper) Run(ctx context.Context) error {
 }
 
 func (c *ConsumerBotFromScrapper) Close() error {
-	return c.consumer.Close()
-}
-
-func (c *ConsumerBotFromScrapper) consume(ctx context.Context, wg *sync.WaitGroup, consumer sarama.ConsumerGroup) {
-	defer wg.Done()
-
-	handler := NewHandler(c.log, c.bot)
-
-	for {
-		if err := consumer.Consume(ctx, []string{c.CfgKafka.KafkaTopic}, handler); err != nil {
-			c.log.Error("Error on consumer message", zap.Error(err))
-
-			return
-		}
-
-		if ctx.Err() != nil {
-			return
-		}
-	}
+	return fmt.Errorf("close called: %w", c.consumer.Close())
 }

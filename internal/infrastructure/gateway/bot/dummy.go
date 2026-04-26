@@ -24,7 +24,13 @@ func (d dummyGateway) GetMessages(ctx context.Context, _ int) (<-chan domain.Mes
 	return ch, nil
 }
 
-func (d dummyGateway) SendMessage(_ int64, _ int, _ string) error {
+func (d dummyGateway) SendMessage(chatID int64, threadID int, text string) error {
+	d.log.Info(
+		"dummy telegram message sent",
+		zap.Int64("chat_id", chatID),
+		zap.Int("thread_id", threadID),
+		zap.String("text", text),
+	)
 	return nil
 }
 

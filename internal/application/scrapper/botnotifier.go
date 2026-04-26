@@ -50,7 +50,7 @@ func NewKafkaBotNotifier(producer *kafka.ProducerScrapperToBot, log *zap.Logger)
 	return &KafkaBotNotifier{producer: producer, log: log}
 }
 
-func (n *KafkaBotNotifier) Notify(ctx context.Context, url, description string, chatIDs []int64) error {
+func (n *KafkaBotNotifier) Notify(_ context.Context, url, description string, chatIDs []int64) error {
 	msg := &pbv1.UpdateLinkRequest{
 		Url:         url,
 		Description: description,
@@ -59,7 +59,7 @@ func (n *KafkaBotNotifier) Notify(ctx context.Context, url, description string, 
 
 	value, err := proto.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal updateLinkRequest failed: %w", err)
 	}
 
 	n.producer.Messages <- &sarama.ProducerMessage{

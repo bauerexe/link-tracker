@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -18,10 +17,6 @@ import (
 )
 
 func TestEndToEnd(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("testcontainers rootless Docker is not supported on Windows")
-	}
-
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
 	env := mustStartE2EEnv(t)
@@ -81,7 +76,9 @@ func testBotCorrectUpdate2000(t *testing.T, env *e2eEnv) {
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		env.DumpLogs(t)
+		t.Fatalf("expected 200 OK, got %d, body=%s", resp.StatusCode, string(b))
 	}
 }
 
@@ -342,14 +339,74 @@ func mustStartE2EEnv(t *testing.T) *e2eEnv {
 	networkName := network.Name
 
 	envPath := filepath.Join(root, "app.env")
+	const mode = 0o644
 	commonFiles := []testcontainers.ContainerFile{
 		{
 			HostFilePath:      envPath,
 			ContainerFilePath: "/app/app.env",
-			FileMode:          0o644,
+			FileMode:          mode,
 		},
 	}
+	pgReq := testcontainers.ContainerRequest{
+		Image:    "postgres:17",
+		Networks: []string{networkName},
+		NetworkAliases: map[string][]string{
+			networkName: {"postgres"},
+		},
+		Env: map[string]string{
+			"POSTGRES_DB":       "link_tracker",
+			"POSTGRES_USER":     "postgres",
+			"POSTGRES_PASSWORD": "postgres",
+		},
+		WaitingFor: wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(2).
+			WithStartupTimeout(30 * time.Second),
+	}
 
+	pg, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: pgReq,
+		Started:          true,
+	})
+	mustNoErr(t, err)
+
+	flywayReq := testcontainers.ContainerRequest{
+		Image:    "flyway/flyway:10",
+		Networks: []string{networkName},
+		NetworkAliases: map[string][]string{
+			networkName: {"flyway"},
+		},
+		Files: []testcontainers.ContainerFile{
+			{
+				HostFilePath:      filepath.Join(root, "migrations", "V1__init.sql"),
+				ContainerFilePath: "/flyway/sql/V1__init.sql",
+				FileMode:          mode,
+			},
+			{
+				HostFilePath:      filepath.Join(root, "migrations", "V2__indexes.sql"),
+				ContainerFilePath: "/flyway/sql/V2__indexes.sql",
+				FileMode:          mode,
+			},
+			{
+				HostFilePath:      filepath.Join(root, "migrations", "V3__github.sql"),
+				ContainerFilePath: "/flyway/sql/V3__github.sql",
+				FileMode:          mode,
+			},
+		},
+		Env: map[string]string{
+			"FLYWAY_URL":             "jdbc:postgresql://postgres:5432/link_tracker",
+			"FLYWAY_USER":            "postgres",
+			"FLYWAY_PASSWORD":        "postgres",
+			"FLYWAY_CONNECT_RETRIES": "60",
+		},
+		Cmd:        []string{"-locations=filesystem:/flyway/sql", "migrate"},
+		WaitingFor: wait.ForExit().WithExitTimeout(60 * time.Second),
+	}
+
+	flyway, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: flywayReq,
+		Started:          true,
+	})
+	mustNoErr(t, err)
 	scrReq := testcontainers.ContainerRequest{
 		FromDockerfile: testcontainers.FromDockerfile{
 			Context:    root,
@@ -369,18 +426,26 @@ func mustStartE2EEnv(t *testing.T) *e2eEnv {
 			"SCRAPPER_ADDR_HTTP":     "0.0.0.0:8080",
 			"SCRAPPER_ADDR_GRPC":     "0.0.0.0:50051",
 			"BOT_ADDR_GRPC":          "bot:50052",
-			"MINUTES_INTERVAL_CHECK": "1",
+			"SECONDS_INTERVAL_CHECK": "30",
 			"GITHUB_TOKEN":           "",
 			"STACK_OVERFLOW_KEY":     "",
+			"KAFKA_ENABLED":          "false",
 		},
 	}
 
 	scr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: scrReq,
-		Started:          true,
+		Started:          false,
 	})
 	mustNoErr(t, err)
-
+	if err = scr.Start(ctx); err != nil {
+		dumpContainerLogs(ctx, t, pg, "postgres")
+		dumpContainerLogs(ctx, t, flyway, "flyway")
+		dumpContainerLogs(ctx, t, scr, "scrapper")
+		_ = scr.Terminate(ctx)
+		_ = network.Remove(ctx)
+		t.Fatalf("start scrapper container: %v", err)
+	}
 	botReq := testcontainers.ContainerRequest{
 		FromDockerfile: testcontainers.FromDockerfile{
 			Context:    root,
@@ -395,13 +460,15 @@ func mustStartE2EEnv(t *testing.T) *e2eEnv {
 		ConfigModifier: func(cfg *dockercontainer.Config) {
 			cfg.WorkingDir = "/app"
 		},
-		WaitingFor: wait.ForLog(`"msg":"starting bot"`).WithStartupTimeout(10 * time.Second),
-		Env: map[string]string{
+		WaitingFor: wait.ForAll(
+			wait.ForLog(`"msg":"starting bot"`),
+		).WithDeadline(40 * time.Second), Env: map[string]string{
 			"BOT_ADDR_HTTP":        "0.0.0.0:8082",
 			"BOT_ADDR_GRPC":        "0.0.0.0:50052",
 			"SCRAPPER_ADDR_GRPC":   "scrapper:50051",
 			"APP_TELEGRAM_TOKEN":   "dummy",
-			"BOT_DISABLE_TELEGRAM": "1",
+			"BOT_DISABLE_TELEGRAM": "true",
+			"KAFKA_ENABLED":        "false",
 		},
 	}
 
@@ -429,7 +496,7 @@ func mustStartE2EEnv(t *testing.T) *e2eEnv {
 	mustNoErr(t, err)
 	botPort, err := bot.MappedPort(ctx, "8082/tcp")
 	mustNoErr(t, err)
-
+	time.Sleep(1 * time.Second)
 	return &e2eEnv{
 		BotBaseURL:      fmt.Sprintf("http://%s:%s", scrOrLocalhost(botHost), botPort.Port()),
 		ScrapperBaseURL: fmt.Sprintf("http://%s:%s", scrOrLocalhost(scrHost), scrPort.Port()),

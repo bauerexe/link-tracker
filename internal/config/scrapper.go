@@ -13,7 +13,7 @@ type ScrapperConfig struct {
 	BotAddrGRPC          string        `config:"bot_addr_grpc"`
 	GitHubToken          string        `config:"github_token"`
 	StackExchangeKey     string        `config:"stack_overflow_key"`
-	MinutesIntervalCheck int           `config:"minutes_interval_check"`
+	SecondsIntervalCheck int           `config:"seconds_interval_check"`
 	PostgresDSN          string        `config:"postgres_dsn"`
 	MigrationsPath       string        `config:"migrations_path"`
 	DBAccessType         string        `config:"db_access_type"`
@@ -23,7 +23,7 @@ type ScrapperConfig struct {
 }
 
 func NewScrapperConfig(fs afero.Fs) (ScrapperConfig, error) {
-	file, err := afero.ReadFile(fs, envFile)
+	file, err := afero.ReadFile(fs, EnvFile)
 	if err != nil {
 		return ScrapperConfig{}, ErrReadFile
 	}

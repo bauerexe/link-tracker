@@ -35,7 +35,7 @@ func TestScrapperConfig(t *testing.T) {
 				BotAddrGRPC:          "localhost:50052",
 				GitHubToken:          "github-token",
 				StackExchangeKey:     "stack-key",
-				MinutesIntervalCheck: 15,
+				SecondsIntervalCheck: 15,
 				PostgresDSN:          "postgres://user:pass@localhost:5432/db?sslmode=disable",
 				MigrationsPath:       "file://migrations",
 				DBAccessType:         "sql",
@@ -50,7 +50,7 @@ scrapper {
   bot_addr_grpc = "localhost:50052"
   github_token = "github-token"
   stack_overflow_key = "stack-key"
-  minutes_interval_check = 15
+  seconds_interval_check = 15
   postgres_dsn = "postgres://user:pass@localhost:5432/db?sslmode=disable"
   migrations_path = "file://migrations"
   db_access_type = "sql"
@@ -93,8 +93,7 @@ scrapper {
 		},
 		{
 			name: "negative read error file missing",
-			init: func(testFs afero.Fs) {
-				// intentionally do not create app.env
+			init: func(_ afero.Fs) {
 			},
 			negative: true,
 			err:      ErrReadFile,
@@ -102,7 +101,6 @@ scrapper {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

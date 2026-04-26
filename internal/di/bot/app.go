@@ -48,19 +48,27 @@ func runConsumer(
 		return
 	}
 
+	var cancel context.CancelFunc
+
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
+		OnStart: func(_ context.Context) error {
 			log.Info("starting kafka consumer")
 
+			runCtx, c := context.WithCancel(context.Background())
+			cancel = c
+
 			go func() {
-				if err := consumer.Run(ctx); err != nil {
+				if err := consumer.Run(runCtx); err != nil {
 					log.Error("kafka consumer stopped", zap.Error(err))
 				}
 			}()
 
 			return nil
 		},
-		OnStop: func(ctx context.Context) error {
+		OnStop: func(_ context.Context) error {
+			if cancel != nil {
+				cancel()
+			}
 			return consumer.Close()
 		},
 	})
@@ -77,11 +85,15 @@ func newRouter(ctx context.Context, client pbv1.ScrapperClient) *botapp.BotDispa
 }
 
 func NewConsumer(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap.Logger, bot botapp.BotGateway) (*kafka.ConsumerBotFromScrapper, error) {
-	c, err := kafka.NewConsumer(cfgKafka, cfgSarama, log, bot)
-	if err != nil {
-		return nil, fmt.Errorf("error creating consumer from kafka: %w", err)
+	if !cfgKafka.KafkaEnabled {
+		log.Info("kafka not enabled")
+		return kafka.NewNoopConsumer(log), nil
 	}
-	return c, nil
+	consumer, err := kafka.NewConsumer(cfgKafka, cfgSarama, log, bot)
+	if err != nil {
+		return nil, fmt.Errorf("new kafka consumer failed: %w", err)
+	}
+	return consumer, nil
 }
 
 func newBotServer(log *zap.Logger, repo botapp.BotGateway) pbv1.BotServer {
@@ -99,8 +111,7 @@ func newBotUsecase(
 	if cfgKafka.KafkaEnabled {
 		server = nil
 	}
-
-	return botapp.NewBot(
+	bot, err := botapp.NewBot(
 		cfg.TokenTGBot,
 		repo,
 		server,
@@ -108,4 +119,8 @@ func newBotUsecase(
 		log,
 		&cfg,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("new bot failed: %w", err)
+	}
+	return bot, nil
 }

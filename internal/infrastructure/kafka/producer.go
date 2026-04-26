@@ -39,10 +39,24 @@ func NewProducer(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap
 	}, nil
 }
 
+func NewNoopProducer(log *zap.Logger) *ProducerScrapperToBot {
+	return &ProducerScrapperToBot{
+		log: log,
+	}
+}
+
 func (p *ProducerScrapperToBot) Run() error {
+	if p == nil || p.producer == nil {
+		if p != nil && p.log != nil {
+			p.log.Info("kafka producer disabled; skip run")
+		}
+		return nil
+	}
+
 	var wg sync.WaitGroup
 
-	wg.Add(2)
+	const delta = 2
+	wg.Add(delta)
 	go func(producer sarama.AsyncProducer) {
 		defer wg.Done()
 		for success := range producer.Successes() {

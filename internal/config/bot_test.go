@@ -79,14 +79,13 @@ bot {
 		},
 		{
 			name:     "negative read error file missing",
-			init:     func(testFs afero.Fs) {},
+			init:     func(_ afero.Fs) {},
 			negative: true,
 			err:      ErrReadFile,
 		},
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

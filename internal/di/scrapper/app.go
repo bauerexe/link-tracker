@@ -92,7 +92,7 @@ func newScheduler(
 	log *zap.Logger,
 	cfg *config.ScrapperConfig,
 ) (*scrapperapp.Scheduler, error) {
-	interval := time.Duration(cfg.MinutesIntervalCheck) * time.Minute
+	interval := time.Duration(cfg.SecondsIntervalCheck) * time.Second
 
 	s, err := scrapperapp.NewScheduler(&scrapperapp.Scheduler{
 		Links:       linkRepo,
