@@ -16,7 +16,6 @@ func New(opts ...func(*sarama.Config)) *sarama.Config {
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
 	cfg.Producer.Compression = sarama.CompressionGZIP
 
-	// cfg.Consumer.Offsets.Initial = sarama.OffsetNewest не понял зачем это, если упадет сервис, то он не обработает старые сообщения
 	cfg.Consumer.Offsets.Initial = sarama.OffsetOldest
 	cfg.Consumer.Offsets.AutoCommit.Enable = false
 	cfg.Consumer.Offsets.AutoCommit.Interval = 1 * time.Second
