@@ -136,12 +136,8 @@ type LinkRepository struct {
 	pool *pgxpool.Pool
 }
 
-func (r *LinkRepository) executor(ctx context.Context) dbtx.Executor {
-	return dbtx.ExecutorFromContext(ctx, r.pool)
-}
-
 func (r *LinkRepository) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return dbtx.InTx(ctx, r.pool, fn)
+	return fmt.Errorf("error in link repository: %w", dbtx.InTx(ctx, r.pool, fn))
 }
 
 func NewLinkRepository(pool *pgxpool.Pool) usecase.LinkRepository {
@@ -453,4 +449,8 @@ func (r *LinkRepository) getTagsByChatLinkIDTx(ctx context.Context, tx pgx.Tx, c
 	}
 
 	return tags, nil
+}
+
+func (r *LinkRepository) executor(ctx context.Context) dbtx.Executor {
+	return dbtx.ExecutorFromContext(ctx, r.pool)
 }

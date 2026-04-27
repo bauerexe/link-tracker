@@ -43,12 +43,14 @@ func NewOutboxRelay(
 		maxAttempts = 3
 	}
 
+	const size = 100
+	const i = 500
 	return &Relay{
 		repo:         NewRepository(pool),
 		producer:     producer,
 		log:          log,
-		batchSize:    100,
-		pollInterval: 500 * time.Millisecond,
+		batchSize:    size,
+		pollInterval: i * time.Millisecond,
 		maxAttempts:  maxAttempts,
 	}, nil
 }
@@ -74,7 +76,7 @@ func (r *Relay) Close() error {
 		return nil
 	}
 
-	return r.producer.Close()
+	return fmt.Errorf("error close: %w", r.producer.Close())
 }
 
 func (r *Relay) processBatch(ctx context.Context) {

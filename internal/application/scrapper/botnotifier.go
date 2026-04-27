@@ -2,6 +2,7 @@ package scrapperapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/riferrei/srclient"
@@ -73,7 +74,7 @@ func NewKafkaBotNotifier(cfgKafka config.KafkaConfig, log *zap.Logger) (*KafkaBo
 func (n *KafkaBotNotifier) Notify(ctx context.Context, url, description string, chatIDs []int64) error {
 	tx, ok := dbtx.TxFromContext(ctx)
 	if !ok {
-		return fmt.Errorf("outbox tx not found in context")
+		return errors.New("outbox tx not found in context")
 	}
 
 	msg := kafka.UpdateLinkAvro{

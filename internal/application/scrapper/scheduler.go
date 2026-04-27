@@ -292,13 +292,14 @@ func (s *Scheduler) processURL(ctx context.Context, now time.Time, url string) e
 
 	txRunner, ok := s.Links.(TxRunner)
 	if !ok {
-		return fmt.Errorf("link repository does not support transactions")
+		return errors.New("link repository does not support transactions")
 	}
 
 	s.Log.Info("insert message to outbox",
 		zap.String("url", url))
 	err = txRunner.InTx(ctx, func(txCtx context.Context) error {
-		chatIDs, err := s.Links.GetChatIDsByLink(txCtx, url)
+		var chatIDs []int64
+		chatIDs, err = s.Links.GetChatIDsByLink(txCtx, url)
 		if err != nil {
 			return fmt.Errorf("get chat ids failed: %w", err)
 		}
