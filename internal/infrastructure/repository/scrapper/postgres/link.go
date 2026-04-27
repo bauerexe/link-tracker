@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	dbtx "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/db"
 
 	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
@@ -20,11 +21,15 @@ type LinkRepository struct {
 	dialect goqu.DialectWrapper
 }
 
-type db interface {
-	Query(context.Context, string, ...any) (pgx.Rows, error)
-	QueryRow(context.Context, string, ...any) pgx.Row
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+func (r *LinkRepository) executor(ctx context.Context) dbtx.Executor {
+	return dbtx.ExecutorFromContext(ctx, r.pool)
 }
+
+func (r *LinkRepository) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return dbtx.InTx(ctx, r.pool, fn)
+}
+
+type db = dbtx.Executor
 
 func NewLinkRepository(pool *pgxpool.Pool) usecase.LinkRepository {
 	return &LinkRepository{
@@ -133,7 +138,7 @@ func (r *LinkRepository) GetLinksByChatID(
 		return nil, fmt.Errorf("build query for links by chat_id=%d: %w", chatID, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sql, args...)
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query links by chat_id=%d: %w", chatID, err)
 	}
@@ -250,7 +255,7 @@ func (r *LinkRepository) ListLinksBatch(ctx context.Context, limit, offset int) 
 		return nil, fmt.Errorf("build query for list links batch: %w", err)
 	}
 
-	rows, err := r.pool.Query(ctx, sql, args...)
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query list links batch: %w", err)
 	}
@@ -294,7 +299,7 @@ func (r *LinkRepository) GetChatIDsByLink(ctx context.Context, url string) ([]in
 		return nil, fmt.Errorf("build query for chat ids by url=%q: %w", url, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sql, args...)
+	rows, err := r.executor(ctx).Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query chat ids by url=%q: %w", url, err)
 	}
@@ -369,7 +374,7 @@ func (r *LinkRepository) SetURLState(ctx context.Context, url string, st domain.
 		return fmt.Errorf("build update url state query for url=%q: %w", url, err)
 	}
 
-	tag, err := r.pool.Exec(ctx, sql, args...)
+	tag, err := r.executor(ctx).Exec(ctx, sql, args...)
 	if err != nil {
 		return fmt.Errorf("update url state for url=%q: %w", url, err)
 	}

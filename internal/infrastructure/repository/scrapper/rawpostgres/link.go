@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	usecase "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	dbtx "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/db"
 )
 
 const (
@@ -134,6 +134,14 @@ const (
 
 type LinkRepository struct {
 	pool *pgxpool.Pool
+}
+
+func (r *LinkRepository) executor(ctx context.Context) dbtx.Executor {
+	return dbtx.ExecutorFromContext(ctx, r.pool)
+}
+
+func (r *LinkRepository) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return dbtx.InTx(ctx, r.pool, fn)
 }
 
 func NewLinkRepository(pool *pgxpool.Pool) usecase.LinkRepository {
@@ -354,7 +362,7 @@ func (r *LinkRepository) ListLinksBatch(ctx context.Context, limit, offset int) 
 }
 
 func (r *LinkRepository) GetChatIDsByLink(ctx context.Context, url string) ([]int64, error) {
-	rows, err := r.pool.Query(ctx, GetChatIDsByLinkSelect, url)
+	rows, err := r.executor(ctx).Query(ctx, GetChatIDsByLinkSelect, url)
 	if err != nil {
 		return nil, fmt.Errorf("query chat ids by url=%q: %w", url, err)
 	}
@@ -408,7 +416,7 @@ func (r *LinkRepository) GetURLState(ctx context.Context, url string) (domain.UR
 }
 
 func (r *LinkRepository) SetURLState(ctx context.Context, url string, st domain.URLState) error {
-	tag, err := r.pool.Exec(ctx, SetURLStateUpdate, url, st.LastCheckedAt, st.LastUpdatedAt)
+	tag, err := r.executor(ctx).Exec(ctx, SetURLStateUpdate, url, st.LastCheckedAt, st.LastUpdatedAt)
 	if err != nil {
 		return fmt.Errorf("update url state for url=%q: %w", url, err)
 	}

@@ -52,23 +52,10 @@ func newBotClient(conn *grpc.ClientConn) pbv1.BotClient {
 var KafkaModule = fx.Options(
 	fx.Provide(
 		newCfgSarama,
-		newProducerScrapperToBot,
 	),
 )
 
 func newCfgSarama() (*sarama.Config, error) {
 	cfg := kafka.New()
 	return cfg, nil
-}
-
-func newProducerScrapperToBot(cfgKafka config.KafkaConfig, cfgSarama *sarama.Config, log *zap.Logger) (*kafka.ProducerScrapperToBot, error) {
-	if !cfgKafka.KafkaEnabled {
-		log.Info("kafka not enabled")
-		return kafka.NewNoopProducer(log), nil
-	}
-	producer, err := kafka.NewProducer(cfgKafka, cfgSarama, log)
-	if err != nil {
-		return nil, fmt.Errorf("create kafka producer: %w, %s", err, cfgKafka.KafkaBrokers[0])
-	}
-	return producer, nil
 }

@@ -224,6 +224,9 @@ func startFlyway(ctx context.Context, root, networkName string) (testcontainers.
 					FileMode:          mode},
 				{HostFilePath: filepath.Join(root, "migrations", "V3__github.sql"),
 					ContainerFilePath: "/flyway/sql/V3__github.sql",
+					FileMode:          mode},
+				{HostFilePath: filepath.Join(root, "migrations", "V4__outbox_messages.sql"),
+					ContainerFilePath: "/flyway/sql/V4__outbox_messages.sql",
 					FileMode:          mode}},
 			Env: map[string]string{
 				"FLYWAY_URL":             "jdbc:postgresql://postgres:5432/link_tracker",

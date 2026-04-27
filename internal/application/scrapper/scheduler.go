@@ -49,6 +49,10 @@ func NewWorkerPool(workers, queueSize int, log *zap.Logger) (*WorkerPool, error)
 	}, nil
 }
 
+type TxRunner interface {
+	InTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 func (w *WorkerPool) Run(ctx context.Context, workers int) {
 	for range workers {
 		go func() {
@@ -278,28 +282,42 @@ func (s *Scheduler) processURL(ctx context.Context, now time.Time, url string) e
 		if updatedAt.IsZero() {
 			updatedAt = now
 		}
+
 		state.LastUpdatedAt = updatedAt
-		return s.saveState(ctx, url, state)
 	}
 
 	if !updated {
 		return s.saveState(ctx, url, state)
 	}
 
-	chatIDs, err := s.Links.GetChatIDsByLink(ctx, url)
+	txRunner, ok := s.Links.(TxRunner)
+	if !ok {
+		return fmt.Errorf("link repository does not support transactions")
+	}
+
+	s.Log.Info("insert message to outbox",
+		zap.String("url", url))
+	err = txRunner.InTx(ctx, func(txCtx context.Context) error {
+		chatIDs, err := s.Links.GetChatIDsByLink(txCtx, url)
+		if err != nil {
+			return fmt.Errorf("get chat ids failed: %w", err)
+		}
+
+		if err = s.Notifier.Notify(txCtx, url, desc, chatIDs); err != nil {
+			return fmt.Errorf("notify bot failed: %w", err)
+		}
+
+		if updatedAt.After(state.LastUpdatedAt) {
+			state.LastUpdatedAt = updatedAt
+		}
+
+		return s.saveState(txCtx, url, state)
+	})
 	if err != nil {
-		return fail("get chat ids failed", err)
+		return fail("process updated link transaction failed", err)
 	}
 
-	if err = s.Notifier.Notify(ctx, url, desc, chatIDs); err != nil {
-		return fail("notify bot failed", err)
-	}
-
-	if updatedAt.After(state.LastUpdatedAt) {
-		state.LastUpdatedAt = updatedAt
-	}
-
-	return s.saveState(ctx, url, state)
+	return nil
 }
 
 func (s *Scheduler) saveState(ctx context.Context, url string, state domain.URLState) error {

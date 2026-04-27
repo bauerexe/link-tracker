@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/IBM/sarama"
 	"github.com/riferrei/srclient"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	dbtx "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/db"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka/outbox"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 	"go.uber.org/zap"
 )
@@ -39,19 +41,19 @@ func (n *GRPCBotNotifier) Notify(ctx context.Context, url, description string, c
 }
 
 type KafkaBotNotifier struct {
-	producer *kafka.ProducerScrapperToBot
+	cfgKafka config.KafkaConfig
 	log      *zap.Logger
 	avro     *kafka.AvroCodec
 }
 
-func NewKafkaBotNotifier(producer *kafka.ProducerScrapperToBot, log *zap.Logger) (*KafkaBotNotifier, error) {
+func NewKafkaBotNotifier(cfgKafka config.KafkaConfig, log *zap.Logger) (*KafkaBotNotifier, error) {
 	if log != nil {
 		log = log.Named("bot_notifier")
 	}
 
-	client := srclient.NewSchemaRegistryClient(producer.CfgKafka.SchemaRegistryURL)
+	client := srclient.NewSchemaRegistryClient(cfgKafka.SchemaRegistryURL)
 
-	schema, err := client.GetLatestSchema(producer.CfgKafka.SchemaSubject)
+	schema, err := client.GetLatestSchema(cfgKafka.SchemaSubject)
 	if err != nil {
 		return nil, fmt.Errorf("get latest avro schema: %w", err)
 	}
@@ -62,13 +64,18 @@ func NewKafkaBotNotifier(producer *kafka.ProducerScrapperToBot, log *zap.Logger)
 	}
 
 	return &KafkaBotNotifier{
-		producer: producer,
+		cfgKafka: cfgKafka,
 		log:      log,
 		avro:     codec,
 	}, nil
 }
 
-func (n *KafkaBotNotifier) Notify(_ context.Context, url, description string, chatIDs []int64) error {
+func (n *KafkaBotNotifier) Notify(ctx context.Context, url, description string, chatIDs []int64) error {
+	tx, ok := dbtx.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("outbox tx not found in context")
+	}
+
 	msg := kafka.UpdateLinkAvro{
 		URL:         url,
 		Description: description,
@@ -80,9 +87,13 @@ func (n *KafkaBotNotifier) Notify(_ context.Context, url, description string, ch
 		return fmt.Errorf("marshal avro updateLinkRequest failed: %w", err)
 	}
 
-	n.producer.Messages <- &sarama.ProducerMessage{
-		Topic: n.producer.CfgKafka.KafkaTopic,
-		Value: sarama.ByteEncoder(value),
+	err = outbox.InsertTx(ctx, tx, outbox.Message{
+		Topic:      n.cfgKafka.KafkaTopic,
+		MessageKey: []byte(url),
+		Payload:    value,
+	})
+	if err != nil {
+		return fmt.Errorf("insert message to outbox: %w", err)
 	}
 
 	return nil

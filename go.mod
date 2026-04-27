@@ -12,7 +12,7 @@ require (
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0
 	github.com/jackc/pgconn v1.14.3
-	github.com/jackc/pgx/v5 v5.9.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/riferrei/srclient v0.7.4
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1

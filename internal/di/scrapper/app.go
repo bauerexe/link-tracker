@@ -7,7 +7,6 @@ import (
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/kafka"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -61,12 +60,11 @@ func newScrapperApp(
 
 func newBotNotifier(
 	client pbv1.BotClient,
-	producer *kafka.ProducerScrapperToBot,
 	log *zap.Logger,
 	cfgKafka config.KafkaConfig,
 ) (scrapperapp.BotNotifier, error) {
 	if cfgKafka.KafkaEnabled {
-		notify, err := scrapperapp.NewKafkaBotNotifier(producer, log)
+		notify, err := scrapperapp.NewKafkaBotNotifier(cfgKafka, log)
 		if err != nil {
 			return nil, fmt.Errorf("new kafka bot notifier: %w", err)
 		}
