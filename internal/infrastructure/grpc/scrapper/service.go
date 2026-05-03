@@ -12,6 +12,7 @@ type api struct {
 	chatRepository   usecase.ChatRepository
 	linkRepository   usecase.LinkRepository
 	trackLinkService *usecase.TrackLinkService
+	cache            Cache
 }
 
 // New - return implementation of pbv1.ScrapperServer
@@ -20,11 +21,13 @@ func New(
 	chatRepo usecase.ChatRepository,
 	linkRepo usecase.LinkRepository,
 	trackLinkService *usecase.TrackLinkService,
+	cache Cache,
 ) pbv1.ScrapperServer {
 	return &api{
 		log:              log,
 		chatRepository:   chatRepo,
 		linkRepository:   linkRepo,
 		trackLinkService: trackLinkService,
+		cache:            cache,
 	}
 }

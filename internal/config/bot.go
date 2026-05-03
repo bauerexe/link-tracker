@@ -2,12 +2,20 @@ package config
 
 import (
 	"errors"
+	"os"
 
 	"github.com/byrnedo/typesafe-config/parse"
 	"github.com/spf13/afero"
 )
 
 var EnvFile = "app.env"
+
+func configPath() string {
+	if p := os.Getenv("CONFIG_PATH"); p != "" {
+		return p
+	}
+	return EnvFile
+}
 
 // BotConfig - struct with all that need 'Telegram Bot Service' to work
 type BotConfig struct {
@@ -28,7 +36,7 @@ func NewBotConfig(fs afero.Fs) (BotConfig, error) {
 	var tree *parse.Tree
 	var err error
 
-	file, err := afero.ReadFile(fs, EnvFile)
+	file, err := afero.ReadFile(fs, configPath())
 	if err != nil {
 		return BotConfig{}, ErrReadFile
 	}

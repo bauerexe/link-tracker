@@ -11,6 +11,8 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /out/bot /app/bot
 COPY app.env /app/app.env
+COPY app.valkey.test.env /app/app.valkey.test.env
+COPY app.nocache.test.env /app/app.nocache.test.env
 ENV TZ=UTC
 EXPOSE 8082 50052
 ENTRYPOINT ["/app/bot"]

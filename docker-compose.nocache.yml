@@ -1,0 +1,4 @@
+services:
+  scrapper:
+    environment:
+      CONFIG_PATH: /app/app.nocache.test.env

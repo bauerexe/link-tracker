@@ -20,7 +20,7 @@ type KafkaConfig struct {
 }
 
 func NewKafkaConfig(fs afero.Fs) (KafkaConfig, error) {
-	file, err := afero.ReadFile(fs, EnvFile)
+	file, err := afero.ReadFile(fs, configPath())
 	if err != nil {
 		return KafkaConfig{}, ErrReadFile
 	}

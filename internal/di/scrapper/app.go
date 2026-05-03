@@ -46,8 +46,9 @@ func newScrapperServer(
 	chatRepo scrapperapp.ChatRepository,
 	linkRepo scrapperapp.LinkRepository,
 	trackLinkService *scrapperapp.TrackLinkService,
+	cache controller.Cache,
 ) pbv1.ScrapperServer {
-	return controller.New(log, chatRepo, linkRepo, trackLinkService)
+	return controller.New(log, chatRepo, linkRepo, trackLinkService, cache)
 }
 func newScrapperApp(
 	server pbv1.ScrapperServer,

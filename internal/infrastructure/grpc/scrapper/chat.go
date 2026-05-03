@@ -43,5 +43,7 @@ func (a *api) DeleteChat(ctx context.Context, req *pbv1.DeleteChatRequest) (*pbv
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
 
+	_ = a.cache.InvalidateLinks(ctx, req.Id)
+
 	return &pbv1.ChatResponse{Id: deletedChat.ID}, nil
 }

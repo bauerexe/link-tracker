@@ -45,6 +45,7 @@ func (a *api) CreateLink(ctx context.Context, req *pbv1.CreateLinkRequest) (*pbv
 		a.log.Error("create link failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
+	_ = a.cache.InvalidateLinks(ctx, chatID)
 
 	return &pbv1.LinkResponse{
 		Id:      int32(createdLink.ID),
@@ -62,6 +63,10 @@ func (a *api) GetLinks(ctx context.Context, req *pbv1.GetLinksRequest) (*pbv1.Li
 	chatID, err := chatIDFromReqOrMeta(ctx, req.GetChatId())
 	if err != nil {
 		return nil, err
+	}
+
+	if cached, ok, cacheErr := a.cache.GetLinks(ctx, chatID); cacheErr == nil && ok {
+		return cached, nil
 	}
 
 	if _, err = a.chatRepository.GetChatByID(ctx, chatID); err != nil {
@@ -110,10 +115,14 @@ func (a *api) GetLinks(ctx context.Context, req *pbv1.GetLinksRequest) (*pbv1.Li
 		}
 	}
 
-	return &pbv1.ListLinksResponse{
+	resp := &pbv1.ListLinksResponse{
 		Links: links,
 		Size:  int32(len(links)),
-	}, nil
+	}
+
+	_ = a.cache.SetLinks(ctx, chatID, resp)
+
+	return resp, nil
 }
 
 func (a *api) DeleteLink(ctx context.Context, req *pbv1.DeleteLinkRequest) (*pbv1.LinkResponse, error) {
@@ -133,7 +142,6 @@ func (a *api) DeleteLink(ctx context.Context, req *pbv1.DeleteLinkRequest) (*pbv
 		a.log.Error("get chat failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
-
 	deletedLink, err := a.linkRepository.DeleteLink(ctx, chatID, req.GetLink())
 	if err != nil {
 		if errors.Is(err, usecase.ErrChatNotFound) || errors.Is(err, usecase.ErrLinkNotFound) {
@@ -142,6 +150,7 @@ func (a *api) DeleteLink(ctx context.Context, req *pbv1.DeleteLinkRequest) (*pbv
 		a.log.Error("delete link failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "internal error")
 	}
+	_ = a.cache.InvalidateLinks(ctx, chatID)
 
 	return &pbv1.LinkResponse{
 		Id:      int32(deletedLink.ID),

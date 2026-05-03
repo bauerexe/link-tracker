@@ -20,10 +20,15 @@ type ScrapperConfig struct {
 	SchedulerInterval    time.Duration `config:"scheduler_interval"`
 	BatchSize            int           `config:"batch_size"`
 	WorkerCount          int           `config:"worker_count"`
+	ValkeyAddr           string        `config:"valkey_addr"`
+	ValkeyPassword       string        `config:"valkey_password"`
+	ValkeyDB             int           `config:"valkey_db"`
+	CacheTTL             time.Duration `config:"cache_ttl"`
+	CacheEnabled         bool          `config:"cache_enabled"`
 }
 
 func NewScrapperConfig(fs afero.Fs) (ScrapperConfig, error) {
-	file, err := afero.ReadFile(fs, EnvFile)
+	file, err := afero.ReadFile(fs, configPath())
 	if err != nil {
 		return ScrapperConfig{}, ErrReadFile
 	}

@@ -2,7 +2,9 @@ package scrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/IBM/sarama"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,38 +36,67 @@ func runOutboxRelay(
 		return
 	}
 
-	var relay *outbox.Relay
-	var cancel context.CancelFunc
+	var (
+		relay  *outbox.Relay
+		cancel context.CancelFunc
+		wg     sync.WaitGroup
+	)
 
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			log.Info("starting outbox relay")
 
-			var err error
-			relay, err = outbox.NewOutboxRelay(pool, cfg, cfgSarama, log)
+			r, err := outbox.NewOutboxRelay(pool, cfg, cfgSarama, log)
 			if err != nil {
 				return fmt.Errorf("new outbox relay: %w", err)
 			}
 
+			relay = r
+
 			runCtx, c := context.WithCancel(context.Background())
 			cancel = c
 
+			wg.Add(1)
 			go func() {
-				if err = relay.Run(runCtx); err != nil {
-					log.Error("outbox relay stopped", zap.Error(err))
+				defer wg.Done()
+
+				if err = relay.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+					log.Error("outbox relay stopped with error", zap.Error(err))
 				}
+
+				log.Info("outbox relay stopped")
 			}()
 
 			return nil
 		},
-		OnStop: func(_ context.Context) error {
+
+		OnStop: func(ctx context.Context) error {
+			log.Info("stopping outbox relay")
+
 			if cancel != nil {
 				cancel()
 			}
 
-			if relay != nil {
-				return relay.Close()
+			done := make(chan struct{})
+
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return fmt.Errorf("stop outbox relay: %w", ctx.Err())
 			}
+
+			if relay != nil {
+				if err := relay.Close(); err != nil {
+					return fmt.Errorf("close outbox relay: %w", err)
+				}
+			}
+
+			log.Info("outbox relay stopped successfully")
 
 			return nil
 		},
