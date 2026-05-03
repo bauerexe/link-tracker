@@ -137,7 +137,11 @@ type LinkRepository struct {
 }
 
 func (r *LinkRepository) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return fmt.Errorf("error in link repository: %w", dbtx.InTx(ctx, r.pool, fn))
+	if err := dbtx.InTx(ctx, r.pool, fn); err != nil {
+		return fmt.Errorf("error in link repository: %w", err)
+	}
+
+	return nil
 }
 
 func NewLinkRepository(pool *pgxpool.Pool) usecase.LinkRepository {

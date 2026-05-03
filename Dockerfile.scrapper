@@ -12,6 +12,6 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /out/scrapper /app/scrapper
 COPY app.env /app/app.env
 COPY --from=build /src/migrations /app/migrations
-ENV TZ=Europe/Moscow
+ENV TZ=UTC
 EXPOSE 8080 50051
 ENTRYPOINT ["/app/scrapper"]
