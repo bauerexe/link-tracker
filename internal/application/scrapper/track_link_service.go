@@ -37,7 +37,12 @@ func NewTrackLinkService(
 	}
 }
 
-func (s *TrackLinkService) CreateLink(ctx context.Context, chatID int64, rawURL string, tags []string, filters []string,
+func (s *TrackLinkService) CreateLink(
+	ctx context.Context,
+	chatID int64,
+	rawURL string,
+	tags []string,
+	filters []string,
 ) (*domain.Link, error) {
 	if _, err := s.chatRepository.GetChatByID(ctx, chatID); err != nil {
 		return nil, fmt.Errorf("failed to get chat id: %w", err)
@@ -54,27 +59,32 @@ func (s *TrackLinkService) CreateLink(ctx context.Context, chatID int64, rawURL 
 		LastCheckedAt: now,
 		LastUpdatedAt: now,
 	})
-	s.log.Info("time of url state",
-		zap.String("url", createdLink.URL),
-		zap.String("lastCheckedAt", now.Format(time.RFC3339)),
-		zap.String("lastUpdatedAt", now.Format(time.RFC3339)))
-
 	if err != nil && !errors.Is(err, ErrLinkNotFound) {
 		return nil, fmt.Errorf("set url state: %w", err)
 	}
+
+	s.log.Info("time of url state",
+		zap.String("url", createdLink.URL),
+		zap.String("lastCheckedAt", now.Format(time.RFC3339)),
+		zap.String("lastUpdatedAt", now.Format(time.RFC3339)),
+	)
 
 	owner, repo, ok := parseGitHubRepo(createdLink.URL)
 	if !ok {
 		return createdLink, nil
 	}
 
-	state := github.State{
-		LastRepoUpdated: &now,
+	state, err := s.getInitialGitHubState(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("get initial github state: %w", err)
 	}
 
-	s.log.Info("time of github repo state",
-		zap.String("LastRepoUpdated", now.Format(time.RFC3339)),
-	)
+	if state.LastRepoUpdated != nil {
+		s.log.Info("time of github repo state",
+			zap.String("LastRepoUpdated", state.LastRepoUpdated.Format(time.RFC3339)),
+			zap.String("repo", owner+"/"+repo),
+		)
+	}
 
 	err = s.githubRepository.CreateState(ctx, owner+"/"+repo, state)
 	if err != nil && !errors.Is(err, github.ErrStateAlreadyExists) {
@@ -83,7 +93,6 @@ func (s *TrackLinkService) CreateLink(ctx context.Context, chatID int64, rawURL 
 
 	return createdLink, nil
 }
-
 func parseGitHubRepo(raw string) (owner string, repo string, ok bool) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -104,4 +113,34 @@ func parseGitHubRepo(raw string) (owner string, repo string, ok bool) {
 	}
 
 	return parts[0], parts[1], true
+}
+
+func (s *TrackLinkService) getInitialGitHubState(
+	ctx context.Context,
+	owner string,
+	repo string,
+) (github.State, error) {
+	repoInfo, err := s.githubClient.GetRepo(ctx, owner, repo)
+	if err != nil {
+		return github.State{}, fmt.Errorf("get github repo: %w", err)
+	}
+
+	lastRepoUpdated := repoInfo.UpdatedAt.UTC()
+
+	issues, err := s.githubClient.ListIssuesAfter(ctx, owner, repo, 0)
+	if err != nil {
+		return github.State{}, fmt.Errorf("list initial github issues: %w", err)
+	}
+
+	lastIssueNumber := 0
+	for _, issue := range issues {
+		if issue.Number > lastIssueNumber {
+			lastIssueNumber = issue.Number
+		}
+	}
+
+	return github.State{
+		LastRepoUpdated:          &lastRepoUpdated,
+		LastProcessedIssueNumber: lastIssueNumber,
+	}, nil
 }

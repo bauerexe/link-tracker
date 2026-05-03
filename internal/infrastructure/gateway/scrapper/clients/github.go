@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
@@ -64,39 +65,90 @@ func (g *GitHubClient) GetRepo(ctx context.Context, owner, repo string) (*github
 	return &rp, nil
 }
 
-func (g *GitHubClient) ListIssuesAfter(ctx context.Context, owner, repo string, afterNumber int) ([]*github.Issue, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues?state=all&sort=created&direction=asc", owner, repo)
+func (g *GitHubClient) ListIssuesAfter(
+	ctx context.Context,
+	owner string,
+	repo string,
+	afterNumber int,
+) ([]*github.Issue, error) {
+	const perPage = 100
 
-	resp, err := g.doRequest(ctx, apiURL)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
+	result := make([]*github.Issue, 0)
+
+	for page := 1; ; page++ {
+		apiURL := fmt.Sprintf(
+			"https://api.github.com/repos/%s/%s/issues?state=all&sort=created&direction=asc&per_page=%d&page=%d",
+			url.PathEscape(owner),
+			url.PathEscape(repo),
+			perPage,
+			page,
+		)
+
+		resp, err := g.doRequest(ctx, apiURL)
+		if err != nil {
+			return nil, err
+		}
+
+		g.logResponse(resp)
+
+		if err = g.checkResponseStatus(resp, apiURL); err != nil {
+			if cerr := resp.Body.Close(); cerr != nil {
+				g.log.Warn("failed to close response body", zap.Error(cerr))
+			}
+
+			return nil, err
+		}
+
+		var pageIssues []*github.Issue
+		if err = json.NewDecoder(resp.Body).Decode(&pageIssues); err != nil {
+			if cerr := resp.Body.Close(); cerr != nil {
+				g.log.Warn("failed to close response body", zap.Error(cerr))
+			}
+
+			return nil, fmt.Errorf("decode issues response: %w", err)
+		}
+
 		if cerr := resp.Body.Close(); cerr != nil {
 			g.log.Warn("failed to close response body", zap.Error(cerr))
 		}
-	}()
 
-	g.logResponse(resp)
+		g.log.Info("github issues page loaded",
+			zap.String("repo", owner+"/"+repo),
+			zap.Int("after_number", afterNumber),
+			zap.Int("page", page),
+			zap.Int("raw_count", len(pageIssues)),
+		)
 
-	if err = g.checkResponseStatus(resp, apiURL); err != nil {
-		return nil, err
-	}
-
-	var allIssues []*github.Issue
-	if err = json.NewDecoder(resp.Body).Decode(&allIssues); err != nil {
-		return nil, fmt.Errorf("decode issues response: %w", err)
-	}
-
-	result := make([]*github.Issue, 0, len(allIssues))
-	for _, issue := range allIssues {
-		if issue == nil {
-			continue
+		if len(pageIssues) == 0 {
+			break
 		}
-		if issue.Number > afterNumber {
-			result = append(result, issue)
+
+		for _, issue := range pageIssues {
+			if issue == nil {
+				continue
+			}
+
+			g.log.Info("github issue seen",
+				zap.String("repo", owner+"/"+repo),
+				zap.Int("issue_number", issue.Number),
+				zap.String("title", issue.Title),
+			)
+
+			if issue.Number > afterNumber {
+				result = append(result, issue)
+			}
+		}
+
+		if len(pageIssues) < perPage {
+			break
 		}
 	}
+
+	g.log.Info("github issues filtered",
+		zap.String("repo", owner+"/"+repo),
+		zap.Int("after_number", afterNumber),
+		zap.Int("result_count", len(result)),
+	)
 
 	return result, nil
 }

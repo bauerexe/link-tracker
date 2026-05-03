@@ -176,14 +176,27 @@ func (s *Scheduler) tick(parentCtx context.Context, now time.Time) {
 	s.setLastFailedLinks(failed)
 
 	if len(failed) > 0 {
-		s.notifyFailedLinks(ctx, failed)
+		txRunner, ok := s.Links.(TxRunner)
+		if !ok {
+			s.Log.Error("link repository does not support transactions")
+		} else {
+			var notifyCtx context.Context
+			notifyCtx, cancel = context.WithTimeout(context.Background(), sendCtxTimeout)
+			defer cancel()
+
+			if err := txRunner.InTx(notifyCtx, func(txCtx context.Context) error {
+				return s.notifyFailedLinks(txCtx, failed)
+			}); err != nil {
+				s.Log.Error("notify failed links failed", zap.Error(err))
+			}
+		}
+
 		s.Log.Warn("scheduler run finished with failed links",
 			zap.Int("failed_count", len(failed)),
 			zap.Any("failed_links", failed),
 		)
 		return
 	}
-
 	if ctx.Err() != nil {
 		s.Log.Warn("scheduler run finished by timeout/cancel", zap.Error(ctx.Err()))
 		return
@@ -345,20 +358,27 @@ func (s *Scheduler) setLastFailedLinks(items []FailedLink) {
 	s.lastFailedLinks = append([]FailedLink(nil), items...)
 }
 
-func (s *Scheduler) notifyFailedLinks(parentCtx context.Context, failed []FailedLink) {
+func (s *Scheduler) notifyFailedLinks(ctx context.Context, failed []FailedLink) error {
 	if len(failed) == 0 {
-		return
+		return nil
 	}
 
+	var errs []error
+
 	for _, item := range failed {
-		chatIDs, err := s.Links.GetChatIDsByLink(parentCtx, item.URL)
+		chatIDs, err := s.Links.GetChatIDsByLink(ctx, item.URL)
 		if err != nil {
+			err = fmt.Errorf("get chat ids by failed link %q: %w", item.URL, err)
+
 			s.Log.Error("get chat ids by failed link failed",
 				zap.String("url", item.URL),
 				zap.Error(err),
 			)
+
+			errs = append(errs, err)
 			continue
 		}
+
 		if len(chatIDs) == 0 {
 			s.Log.Warn("no chat ids for failed link report",
 				zap.String("url", item.URL),
@@ -372,20 +392,23 @@ func (s *Scheduler) notifyFailedLinks(parentCtx context.Context, failed []Failed
 			item.Error,
 		)
 
-		sendCtx, cancel := context.WithTimeout(context.Background(), sendCtxTimeout)
-		err = s.Notifier.Notify(
-			sendCtx,
+		if err = s.Notifier.Notify(
+			ctx,
 			"failed-links-report",
 			msg,
 			chatIDs,
-		)
-		cancel()
+		); err != nil {
+			err = fmt.Errorf("notify failed link report for %q: %w", item.URL, err)
 
-		if err != nil {
 			s.Log.Error("notify failed link report failed",
 				zap.String("url", item.URL),
 				zap.Error(err),
 			)
+
+			errs = append(errs, err)
+			continue
 		}
 	}
+
+	return errors.Join(errs...)
 }

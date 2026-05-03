@@ -159,11 +159,20 @@ func summarizeIssues(st *State, repository *Repo, issues []*Issue, since time.Ti
 	}
 
 	for _, issue := range issues {
-		if shouldSkipIssue(issue, since, st.LastProcessedIssueNumber) {
+		if issue == nil {
 			continue
 		}
 
 		updateMaxIssueNumber(&summary, issue)
+
+		if issue.Number <= st.LastProcessedIssueNumber {
+			continue
+		}
+
+		if issue.CreatedAt.Before(since) {
+			continue
+		}
+
 		updateLatestRepositoryTime(&summary, issue)
 
 		if isPullRequest(issue) {
@@ -177,20 +186,6 @@ func summarizeIssues(st *State, repository *Repo, issues []*Issue, since time.Ti
 	}
 
 	return summary
-}
-
-func shouldSkipIssue(issue *Issue, since time.Time, lastIssueNumber int) bool {
-	if issue == nil {
-		return true
-	}
-	if issue.CreatedAt.Before(since) {
-		return true
-	}
-	if issue.Number <= lastIssueNumber {
-		return true
-	}
-
-	return false
 }
 
 func updateMaxIssueNumber(summary *issueSummary, issue *Issue) {
