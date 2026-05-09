@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	github.com/IBM/sarama v1.48.0
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/byrnedo/typesafe-config v1.0.2
 	github.com/docker/docker v28.5.1+incompatible
 	github.com/doug-martin/goqu/v9 v9.19.0
@@ -16,12 +17,14 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/riferrei/srclient v0.7.4
+	github.com/sony/gobreaker v1.0.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
 	go.uber.org/fx v1.24.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.27.1
+	golang.org/x/time v0.12.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
@@ -110,7 +113,6 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

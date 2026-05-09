@@ -25,6 +25,17 @@ type ScrapperConfig struct {
 	ValkeyDB             int           `config:"valkey_db"`
 	CacheTTL             time.Duration `config:"cache_ttl"`
 	CacheEnabled         bool          `config:"cache_enabled"`
+	RetryMaxAttempts     uint          `config:"retry_max_attempts"`
+	RetryDelay           time.Duration `config:"retry_delay"`
+	RetryableStatuses    []int         `config:"retryable_statuses"`
+	CBMaxRequests        uint32        `config:"cb_max_requests"`
+	CBInterval           time.Duration `config:"cb_interval"`
+	CBTimeout            time.Duration `config:"cb_timeout"`
+	RateLimitRPS         float64       `config:"rate_limit_rps"`
+	RateLimitBurst       int           `config:"rate_limit_burst"`
+	HTTPTimeout          time.Duration `config:"http_timeout"`
+	CBFailureRate        float64       `config:"cb_failure_rate"`
+	CBMinRequests        uint32        `config:"cb_min_requests"`
 }
 
 func NewScrapperConfig(fs afero.Fs) (ScrapperConfig, error) {

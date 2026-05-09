@@ -17,13 +17,14 @@ type GitHubClient struct {
 	httpClient *http.Client
 	token      string
 	log        *zap.Logger
+	resilience ResilienceConfig
 }
 
 const (
 	githubHTTPTimeout = 10 * time.Second
 )
 
-func NewGitHubClient(httpClient *http.Client, token string, log *zap.Logger) github.Client {
+func NewGitHubClient(httpClient *http.Client, token string, log *zap.Logger, resilience ResilienceConfig) github.Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: githubHTTPTimeout}
 	}
@@ -34,6 +35,7 @@ func NewGitHubClient(httpClient *http.Client, token string, log *zap.Logger) git
 		httpClient: httpClient,
 		token:      token,
 		log:        log,
+		resilience: resilience,
 	}
 }
 
@@ -195,7 +197,10 @@ func (g *GitHubClient) doRequest(ctx context.Context, apiURL string) (*http.Resp
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := doWithResilience(ctx, g.resilience, func(c context.Context) (*http.Response, error) {
+		req = req.WithContext(c)
+		return g.httpClient.Do(req)
+	})
 	if err != nil {
 		g.log.Warn("http request failed", zap.Error(err))
 		return nil, fmt.Errorf("do request: %w", err)

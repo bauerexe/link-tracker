@@ -42,6 +42,14 @@ func TestScrapperConfig(t *testing.T) {
 				SchedulerInterval:    time.Minute,
 				BatchSize:            100,
 				WorkerCount:          4,
+				RetryMaxAttempts:     3,
+				RetryDelay:           2 * time.Second,
+				RetryableStatuses:    []int{429, 500},
+				CBMaxRequests:        2,
+				CBInterval:           30 * time.Second,
+				CBTimeout:            15 * time.Second,
+				RateLimitRPS:         10,
+				RateLimitBurst:       20,
 			},
 			init: initFunc(`
 scrapper {
@@ -57,6 +65,14 @@ scrapper {
   scheduler_interval = "1m"
   batch_size = 100
   worker_count = 4
+  retry_max_attempts = 3
+  retry_delay = "2s"
+  retryable_statuses = [429, 500]
+  cb_max_requests = 2
+  cb_interval = "30s"
+  cb_timeout = "15s"
+  rate_limit_rps = 10
+  rate_limit_burst = 20
 }
 `),
 		},

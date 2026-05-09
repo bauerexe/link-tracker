@@ -17,13 +17,14 @@ type StackOverflowClient struct {
 	site       string
 	key        string
 	log        *zap.Logger
+	resilience ResilienceConfig
 }
 
 const (
 	stackoverflowHTTPTimeout = 10 * time.Second
 )
 
-func NewStackOverflowClient(httpClient *http.Client, key string, log *zap.Logger) stackoverflow.Client {
+func NewStackOverflowClient(httpClient *http.Client, key string, log *zap.Logger, resilience ResilienceConfig) stackoverflow.Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: stackoverflowHTTPTimeout}
 	}
@@ -36,6 +37,7 @@ func NewStackOverflowClient(httpClient *http.Client, key string, log *zap.Logger
 		key:        key,
 		site:       "stackoverflow",
 		log:        log,
+		resilience: resilience,
 	}
 }
 
@@ -103,7 +105,10 @@ func (c *StackOverflowClient) doRequest(ctx context.Context, apiURL string) (*ht
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := doWithResilience(ctx, c.resilience, func(cctx context.Context) (*http.Response, error) {
+		req = req.WithContext(cctx)
+		return c.httpClient.Do(req)
+	})
 	if err != nil {
 		c.log.Warn("stackexchange request failed", zap.Error(err))
 		return nil, fmt.Errorf("do request: %w", err)

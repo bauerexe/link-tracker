@@ -64,15 +64,15 @@ func newBotNotifier(
 	log *zap.Logger,
 	cfgKafka config.KafkaConfig,
 ) (scrapperapp.BotNotifier, error) {
-	if cfgKafka.KafkaEnabled {
-		notify, err := scrapperapp.NewKafkaBotNotifier(cfgKafka, log)
-		if err != nil {
-			return nil, fmt.Errorf("new kafka bot notifier: %w", err)
-		}
-		return notify, nil
+	primary := scrapperapp.NewGRPCBotNotifier(client, log)
+	if !cfgKafka.KafkaEnabled {
+		return primary, nil
 	}
-
-	return scrapperapp.NewGRPCBotNotifier(client, log), nil
+	fallback, err := scrapperapp.NewKafkaBotNotifier(cfgKafka, log)
+	if err != nil {
+		return nil, fmt.Errorf("new kafka bot notifier: %w", err)
+	}
+	return scrapperapp.NewFallbackBotNotifier(primary, fallback, log), nil
 }
 
 func newCheckers(gc github.Client, sc stackoverflow.Client, gr github.Repository, log *zap.Logger,

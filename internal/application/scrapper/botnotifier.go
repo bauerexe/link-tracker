@@ -47,6 +47,30 @@ type KafkaBotNotifier struct {
 	avro     *kafka.AvroCodec
 }
 
+type FallbackBotNotifier struct {
+	primary  BotNotifier
+	fallback BotNotifier
+	log      *zap.Logger
+}
+
+func NewFallbackBotNotifier(primary BotNotifier, fallback BotNotifier, log *zap.Logger) *FallbackBotNotifier {
+	return &FallbackBotNotifier{primary: primary, fallback: fallback, log: log}
+}
+
+func (n *FallbackBotNotifier) Notify(ctx context.Context, url, description string, chatIDs []int64) error {
+	err := n.primary.Notify(ctx, url, description, chatIDs)
+	if err == nil {
+		return nil
+	}
+	if n.log != nil {
+		n.log.Warn("primary notifier failed, using fallback", zap.Error(err))
+	}
+	if fbErr := n.fallback.Notify(ctx, url, description, chatIDs); fbErr != nil {
+		return fmt.Errorf("primary notify failed: %w; fallback failed: %w", err, fbErr)
+	}
+	return nil
+}
+
 func NewKafkaBotNotifier(cfgKafka config.KafkaConfig, log *zap.Logger) (*KafkaBotNotifier, error) {
 	if log != nil {
 		log = log.Named("bot_notifier")
