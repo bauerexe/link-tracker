@@ -18,6 +18,15 @@ const (
 	defaultGeminiModel   = "gemini-2.5-flash-lite"
 	defaultGeminiTimeout = 12 * time.Second
 	geminiAPIBaseURL     = "https://generativelanguage.googleapis.com"
+	defaultLimit         = 500
+	temperature          = 0.2
+	buf                  = 4096
+	readerLimit          = 1 << 20
+
+	defaultGeminiOutputTokens = 256
+	geminiCharsPerToken       = 3
+	minGeminiOutputTokens     = 128
+	maxGeminiOutputTokens     = 1024
 )
 
 type GeminiSummarizer struct {
@@ -119,7 +128,55 @@ func (s *GeminiSummarizer) Summarize(ctx context.Context, text string, limit int
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	requestBody := geminiGenerateContentRequest{
+	body, err := s.generateContent(ctx, text, limit)
+	if err != nil {
+		return "", err
+	}
+
+	summary, err := parseGeminiSummary(body)
+	if err != nil {
+		return "", err
+	}
+
+	return limitGeminiSummary(ctx, summary, limit)
+}
+
+func (s *GeminiSummarizer) generateContent(ctx context.Context, text string, limit int) ([]byte, error) {
+	req, err := s.newGenerateContentHTTPRequest(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.doGenerateContentRequest(req)
+}
+
+func (s *GeminiSummarizer) newGenerateContentHTTPRequest(
+	ctx context.Context,
+	text string,
+	limit int,
+) (*http.Request, error) {
+	payload, err := json.Marshal(newGeminiGenerateContentRequest(text, limit))
+	if err != nil {
+		return nil, fmt.Errorf("marshal gemini request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		s.generateContentEndpoint(),
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("new gemini request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	return req, nil
+}
+
+func newGeminiGenerateContentRequest(text string, limit int) geminiGenerateContentRequest {
+	return geminiGenerateContentRequest{
 		Contents: []geminiContent{
 			{
 				Parts: []geminiPart{
@@ -130,45 +187,56 @@ func (s *GeminiSummarizer) Summarize(ctx context.Context, text string, limit int
 			},
 		},
 		GenerationConfig: geminiGenerationConfig{
-			Temperature:     0.2,
+			Temperature:     temperature,
 			MaxOutputTokens: outputTokenLimit(limit),
 		},
 	}
+}
 
-	payload, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", fmt.Errorf("marshal gemini request: %w", err)
-	}
-
-	endpoint := fmt.Sprintf(
+func (s *GeminiSummarizer) generateContentEndpoint() string {
+	return fmt.Sprintf(
 		"%s/v1beta/models/%s:generateContent?key=%s",
 		s.baseURL,
 		url.PathEscape(s.model),
 		url.QueryEscape(s.apiKey),
 	)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("new gemini request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
+func (s *GeminiSummarizer) doGenerateContentRequest(req *http.Request) ([]byte, error) {
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call gemini api: %w", err)
-	}
-	defer resp.Body.Close()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 
+		return nil, fmt.Errorf("call gemini api: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	return readGeminiResponseBody(resp)
+}
+
+func readGeminiResponseBody(resp *http.Response) ([]byte, error) {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("gemini api status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", fmt.Errorf("read gemini response: %w", err)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, buf))
+		if err != nil {
+			return nil, fmt.Errorf("read gemini error response: %w", err)
+		}
+
+		return nil, fmt.Errorf("gemini api status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, readerLimit))
+	if err != nil {
+		return nil, fmt.Errorf("read gemini response: %w", err)
+	}
+
+	return body, nil
+}
+
+func parseGeminiSummary(body []byte) (string, error) {
 	var response geminiGenerateContentResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return "", fmt.Errorf("decode gemini response: %w; body=%s", err, strings.TrimSpace(string(body)))
@@ -192,6 +260,11 @@ func (s *GeminiSummarizer) Summarize(ctx context.Context, text string, limit int
 			strings.TrimSpace(string(body)),
 		)
 	}
+
+	return summary, nil
+}
+
+func limitGeminiSummary(ctx context.Context, summary string, limit int) (string, error) {
 	if limit > 0 && utf8.RuneCountInString(summary) > limit {
 		return NewStubSummarizer().Summarize(ctx, summary, limit)
 	}
@@ -231,7 +304,7 @@ func (r geminiGenerateContentResponse) blockReason() string {
 
 func buildGeminiSummarizationPrompt(text string, limit int) string {
 	if limit <= 0 {
-		const defaultLimit = 500
+
 		limit = defaultLimit
 	}
 
@@ -262,16 +335,16 @@ func buildGeminiSummarizationPrompt(text string, limit int) string {
 
 func outputTokenLimit(charLimit int) int {
 	if charLimit <= 0 {
-		return 256
+		return defaultGeminiOutputTokens
 	}
 
-	tokens := charLimit / 3
-	if tokens < 128 {
-		return 128
+	tokens := charLimit / geminiCharsPerToken
+	if tokens < minGeminiOutputTokens {
+		return minGeminiOutputTokens
 	}
 
-	if tokens > 1024 {
-		return 1024
+	if tokens > maxGeminiOutputTokens {
+		return maxGeminiOutputTokens
 	}
 
 	return tokens

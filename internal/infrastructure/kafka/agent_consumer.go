@@ -115,7 +115,7 @@ func (c *AgentConsumer) Close() error {
 	if c.producer != nil {
 		if err := c.producer.Close(); err != nil {
 			if closeErr != nil {
-				return fmt.Errorf("%v; close producer: %w", closeErr, err)
+				return fmt.Errorf("%w; close producer: %w", closeErr, err)
 			}
 			return fmt.Errorf("close producer: %w", err)
 		}

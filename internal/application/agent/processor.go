@@ -71,32 +71,40 @@ func (p *Processor) Process(ctx context.Context, update Update) (Update, bool, e
 		return update, false, nil
 	}
 
-	threshold := p.cfg.Summarization.Threshold
-	if threshold > 0 && utf8.RuneCountInString(update.Description) > threshold {
-		originalDescription := update.Description
-
-		summary, err := p.summarizer.Summarize(ctx, originalDescription, threshold)
-		if err != nil {
-			summary, err = NewStubSummarizer().Summarize(ctx, originalDescription, threshold)
-			if err != nil {
-				return update, false, fmt.Errorf("fallback summarize update: %w", err)
-			}
-		}
-
-		summary = strings.TrimSpace(summary)
-		if summary == "" {
-			summary, err = NewStubSummarizer().Summarize(ctx, originalDescription, threshold)
-			if err != nil {
-				return update, false, fmt.Errorf("empty summary fallback: %w", err)
-			}
-		}
-
-		if summary != "" {
-			update.Description = summary
-		}
+	description, err := p.summarizeDescription(ctx, update.Description)
+	if err != nil {
+		return update, false, err
 	}
 
+	update.Description = description
+
 	return update, true, nil
+}
+
+func (p *Processor) summarizeDescription(ctx context.Context, description string) (string, error) {
+	threshold := p.cfg.Summarization.Threshold
+	if threshold <= 0 || utf8.RuneCountInString(description) <= threshold {
+		return description, nil
+	}
+
+	summary, err := p.summarizer.Summarize(ctx, description, threshold)
+	summary = strings.TrimSpace(summary)
+
+	if err == nil && summary != "" {
+		return summary, nil
+	}
+
+	fallbackSummary, err := NewStubSummarizer().Summarize(ctx, description, threshold)
+	if err != nil {
+		return "", fmt.Errorf("fallback summarize update: %w", err)
+	}
+
+	fallbackSummary = strings.TrimSpace(fallbackSummary)
+	if fallbackSummary == "" {
+		return description, nil
+	}
+
+	return fallbackSummary, nil
 }
 
 func (p *Processor) shouldDropUpdate(update Update) bool {
@@ -170,7 +178,8 @@ func extractAuthors(text string) []string {
 
 	authors := make([]string, 0, len(matches))
 	for _, match := range matches {
-		if len(match) < 2 {
+		const expect = 2
+		if len(match) < expect {
 			continue
 		}
 

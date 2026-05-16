@@ -21,21 +21,34 @@ func TestGeminiSummarizerSummarize(t *testing.T) {
 		assert.Equal(t, "test-key", r.URL.Query().Get("key"))
 
 		var request geminiGenerateContentRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-		require.NotEmpty(t, request.Contents)
-		require.Contains(t, request.Contents[0].Parts[0].Text, "Текст обновления")
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if !assert.NotEmpty(t, request.Contents) {
+			http.Error(w, "empty contents", http.StatusBadRequest)
+			return
+		}
+
+		if !assert.NotEmpty(t, request.Contents[0].Parts) {
+			http.Error(w, "empty parts", http.StatusBadRequest)
+			return
+		}
+
+		assert.Contains(t, request.Contents[0].Parts[0].Text, "Текст обновления")
 
 		_, _ = w.Write([]byte(`{
-			"candidates": [
-				{
-					"content": {
-						"parts": [
-							{"text": "Короткое резюме обновления."}
-						]
-					}
+		"candidates": [
+			{
+				"content": {
+					"parts": [
+						{"text": "Короткое резюме обновления."}
+					]
 				}
-			]
-		}`))
+			}
+		]
+	}`))
 	}))
 	defer server.Close()
 
@@ -51,18 +64,39 @@ func TestGeminiSummarizerSummarize(t *testing.T) {
 func TestGeminiSummarizerTrimsTooLongSummary(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1beta/models/gemini-test:generateContent", r.URL.Path)
+		assert.Equal(t, "test-key", r.URL.Query().Get("key"))
+
+		var request geminiGenerateContentRequest
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if !assert.NotEmpty(t, request.Contents) {
+			http.Error(w, "empty contents", http.StatusBadRequest)
+			return
+		}
+
+		if !assert.NotEmpty(t, request.Contents[0].Parts) {
+			http.Error(w, "empty parts", http.StatusBadRequest)
+			return
+		}
+
+		assert.Contains(t, request.Contents[0].Parts[0].Text, "Текст обновления")
+
 		_, _ = w.Write([]byte(`{
-			"candidates": [
-				{
-					"content": {
-						"parts": [
-							{"text": "1234567890"}
-						]
-					}
+		"candidates": [
+			{
+				"content": {
+					"parts": [
+						{"text": "Короткое резюме обновления."}
+					]
 				}
-			]
-		}`))
+			}
+		]
+	}`))
 	}))
 	defer server.Close()
 
@@ -72,7 +106,7 @@ func TestGeminiSummarizerTrimsTooLongSummary(t *testing.T) {
 	summary, err := summarizer.Summarize(context.Background(), "long text", 5)
 
 	require.NoError(t, err)
-	assert.Equal(t, "12345...", summary)
+	assert.Equal(t, "Корот...", summary)
 }
 
 func TestNewGeminiSummarizerRequiresAPIKey(t *testing.T) {
