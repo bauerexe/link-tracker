@@ -22,6 +22,10 @@ const (
 
 	ScopeScrapperSyncAPI  = "scrapper_sync_api"
 	ScopeScrapperAsyncAPI = "scrapper_async_api"
+
+	unknownLabel              = "unknown"
+	microsecondsInMillisecond = 1000
+	clientClosedRequestStatus = 499
 )
 
 var durationBucketsMS = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000}
@@ -79,12 +83,12 @@ var (
 )
 
 func ObserveRequestDuration(scope, scopeType string, started time.Time) {
-	requestDuration.WithLabelValues(label(scope, "unknown"), label(scopeType, "unknown")).
+	requestDuration.WithLabelValues(label(scope), label(scopeType)).
 		Observe(millisecondsSince(started))
 }
 
 func ObserveCommandDuration(scope, scopeType string, started time.Time) {
-	commandDuration.WithLabelValues(label(scope, "unknown"), label(scopeType, "unknown")).
+	commandDuration.WithLabelValues(label(scope), label(scopeType)).
 		Observe(millisecondsSince(started))
 }
 
@@ -122,7 +126,7 @@ func UnaryServerInterceptor(source string) grpc.UnaryServerInterceptor {
 		statusCode := grpcCodeToHTTPStatus(status.Code(err))
 		statusLabel := strconv.Itoa(statusCode)
 		method := "grpc"
-		path := label(info.FullMethod, "unknown")
+		path := label(info.FullMethod)
 
 		apiRequests.WithLabelValues(source, method, path, statusLabel).Inc()
 		apiRequestDuration.WithLabelValues(source, method, path, statusLabel).
@@ -168,13 +172,13 @@ func (w *statusResponseWriter) WriteHeader(statusCode int) {
 }
 
 func millisecondsSince(started time.Time) float64 {
-	return float64(time.Since(started).Microseconds()) / 1000
+	return float64(time.Since(started).Microseconds()) / microsecondsInMillisecond
 }
 
-func label(value, fallback string) string {
+func label(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return fallback
+		return unknownLabel
 	}
 	return value
 }
@@ -196,7 +200,7 @@ func grpcCodeToHTTPStatus(code codes.Code) int {
 	case codes.OK:
 		return http.StatusOK
 	case codes.Canceled:
-		return 499
+		return clientClosedRequestStatus
 	case codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
 		return http.StatusBadRequest
 	case codes.NotFound:
@@ -215,6 +219,8 @@ func grpcCodeToHTTPStatus(code codes.Code) int {
 		return http.StatusServiceUnavailable
 	case codes.DeadlineExceeded:
 		return http.StatusGatewayTimeout
+	case codes.Unknown, codes.Internal, codes.DataLoss:
+		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}

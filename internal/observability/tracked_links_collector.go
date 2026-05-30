@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -23,9 +24,11 @@ JOIN chat_links cl ON cl.link_id = l.id
 GROUP BY tracked_source
 `
 
+const trackedLinksCollectTimeout = 3 * time.Second
+
 var (
 	registerTrackedLinksOnce sync.Once
-	registerTrackedLinksErr  error
+	errRegisterTrackedLinks  error
 )
 
 type TrackedLinksCollector struct {
@@ -40,15 +43,16 @@ func RegisterTrackedLinksCollector(pool *pgxpool.Pool) error {
 
 	registerTrackedLinksOnce.Do(func() {
 		err := prometheus.Register(NewTrackedLinksCollector(pool))
-		if alreadyRegistered, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			if _, ok = alreadyRegistered.ExistingCollector.(*TrackedLinksCollector); ok {
+		var alreadyRegistered prometheus.AlreadyRegisteredError
+		if errors.As(err, &alreadyRegistered) {
+			if _, ok := alreadyRegistered.ExistingCollector.(*TrackedLinksCollector); ok {
 				err = nil
 			}
 		}
-		registerTrackedLinksErr = err
+		errRegisterTrackedLinks = err
 	})
 
-	return registerTrackedLinksErr
+	return errRegisterTrackedLinks
 }
 
 func NewTrackedLinksCollector(pool *pgxpool.Pool) *TrackedLinksCollector {
@@ -88,7 +92,7 @@ func (c *TrackedLinksCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *TrackedLinksCollector) collectCounts() (map[string]float64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), trackedLinksCollectTimeout)
 	defer cancel()
 
 	rows, err := c.pool.Query(ctx, trackedLinksBySourceSQL)
