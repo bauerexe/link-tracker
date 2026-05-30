@@ -8,6 +8,7 @@ import (
 	"github.com/IBM/sarama"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 	"go.uber.org/zap"
 )
 
@@ -115,6 +116,9 @@ func (r *Relay) processBatch(ctx context.Context) {
 }
 
 func (r *Relay) publish(msg Message) error {
+	started := time.Now()
+	defer observability.ObserveRequestDuration(observability.ScopeKafka, msg.Topic, started)
+
 	_, _, err := r.producer.SendMessage(&sarama.ProducerMessage{
 		Topic: msg.Topic,
 		Key:   sarama.ByteEncoder(msg.MessageKey),

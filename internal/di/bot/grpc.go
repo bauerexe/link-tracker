@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability/instrumentation"
 	pbv1 "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/pkg/api/proto"
 )
 
@@ -46,5 +47,5 @@ func newScrapperConn(
 }
 
 func newScrapperClient(conn *grpc.ClientConn) pbv1.ScrapperClient {
-	return pbv1.NewScrapperClient(conn)
+	return instrumentation.NewMeasuredScrapperClient(pbv1.NewScrapperClient(conn))
 }

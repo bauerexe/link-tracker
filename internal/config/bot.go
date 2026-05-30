@@ -23,6 +23,7 @@ type BotConfig struct {
 	ScrapperAddrGRPC string `config:"scrapper_addr_grpc"`
 	BotAddrGRPC      string `config:"bot_addr_grpc"`
 	BotAddrHTTP      string `config:"bot_addr_http"`
+	BotMetricsAddr   string `config:"bot_metrics_addr"`
 	TelegramDisabled bool   `config:"bot_disable_telegram"`
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/IBM/sarama"
 	botapp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/bot"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 	"go.uber.org/zap"
 )
 
@@ -142,7 +143,9 @@ func (h *Handler) processMessage(msg *UpdateLinkAvro) []string {
 			)
 
 			failed = append(failed, strconv.FormatInt(chatID, 10))
+			continue
 		}
+		observability.IncSentNotification()
 	}
 
 	return failed
