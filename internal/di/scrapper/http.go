@@ -12,6 +12,7 @@ import (
 	stackoverflow "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/stackoverflow"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/gateway/scrapper/clients"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability/instrumentation"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -90,9 +91,9 @@ func newHTTPClient(lc fx.Lifecycle, log *zap.Logger, cfg *config.ScrapperConfig)
 }
 
 func newGitHubClient(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.Logger, resilience clients.ResilienceConfig) github.Client {
-	return clients.NewGitHubClient(httpClient, cfg.GitHubToken, log, resilience)
+	return instrumentation.NewMeasuredGitHubClient(clients.NewGitHubClient(httpClient, cfg.GitHubToken, log, resilience))
 }
 
 func newStackOverflowClient(httpClient *http.Client, cfg *config.ScrapperConfig, log *zap.Logger, resilience clients.ResilienceConfig) stackoverflow.Client {
-	return clients.NewStackOverflowClient(httpClient, cfg.StackExchangeKey, log, resilience)
+	return instrumentation.NewMeasuredStackOverflowClient(clients.NewStackOverflowClient(httpClient, cfg.StackExchangeKey, log, resilience))
 }

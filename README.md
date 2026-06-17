@@ -1,5 +1,17 @@
 # LinkTracker
 
+## Monitoring
+
+Prometheus and Grafana are included in `docker-compose.yml`.
+
+- Scrapper metrics: `http://localhost:8080/metrics`
+- Bot metrics: `http://localhost:8011/metrics`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (`admin` / `admin`)
+- Dashboard JSON: `monitoring/grafana/dashboards/link-tracker-observability.json`
+- PromQL examples: `example_pql.txt`
+- Full notes: `OBSERVABILITY.md`
+
 **LinkTracker** – Telegram-бот, который отслеживает изменения на веб-страницах и оперативно информирует пользователя о них.
 
 ---

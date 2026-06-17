@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -47,7 +48,9 @@ func (a *api) UpdateLink(_ context.Context, req *pbv1.UpdateLinkRequest) (*pbv1.
 		if err := a.msg.SendMessage(chatID, 0, text); err != nil {
 			a.log.Debug("can`t send message", zap.Int64("chatId", chatID))
 			failed = append(failed, strconv.FormatInt(chatID, 10))
+			continue
 		}
+		observability.IncSentNotification()
 	}
 
 	if len(failed) > 0 {

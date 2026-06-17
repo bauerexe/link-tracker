@@ -1,0 +1,45 @@
+Link Tracker dashboard PromQL
+
+1. Scrapper request rate
+sum(rate(api_requests_total{application=~"$application"}[$__rate_interval])) by (application)
+
+2. Scrapper error rate
+sum(rate(api_requests_total{application=~"$application", status=~"5.."}[$__rate_interval])) by (application)
+
+3. Scrapper component latency p50/p95/p99
+histogram_quantile(0.50, sum(rate(request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, scope, scope_type))
+histogram_quantile(0.95, sum(rate(request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, scope, scope_type))
+histogram_quantile(0.99, sum(rate(request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, scope, scope_type))
+
+4. Scrapper API latency p50/p95/p99
+histogram_quantile(0.50, sum(rate(api_request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, source, path))
+histogram_quantile(0.95, sum(rate(api_request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, source, path))
+histogram_quantile(0.99, sum(rate(api_request_duration_ms_total_bucket{application=~"$application"}[$__rate_interval])) by (le, source, path))
+
+5. Active tracked links
+sum(links_on_track_total) by (tracked_source)
+
+6. User messages per second
+sum(rate(command_requests_total[$__rate_interval])) by (command)
+
+7. External source scrape latency p50/p95/p99
+histogram_quantile(0.50, sum(rate(request_duration_ms_total_bucket{application=~"$application", scope="external_source"}[$__rate_interval])) by (le, scope_type))
+histogram_quantile(0.95, sum(rate(request_duration_ms_total_bucket{application=~"$application", scope="external_source"}[$__rate_interval])) by (le, scope_type))
+histogram_quantile(0.99, sum(rate(request_duration_ms_total_bucket{application=~"$application", scope="external_source"}[$__rate_interval])) by (le, scope_type))
+
+8. Bot command duration p50/p95/p99
+histogram_quantile(0.50, sum(rate(command_duration_ms_total_bucket[$__rate_interval])) by (le, scope, scope_type))
+histogram_quantile(0.95, sum(rate(command_duration_ms_total_bucket[$__rate_interval])) by (le, scope, scope_type))
+histogram_quantile(0.99, sum(rate(command_duration_ms_total_bucket[$__rate_interval])) by (le, scope, scope_type))
+
+9. Telegram bot requests
+sum(rate(command_requests_total[$__rate_interval]))
+
+10. Sent notifications
+sum(rate(sent_notification_total[$__rate_interval]))
+sum(increase(sent_notification_total[$__range]))
+sum(sent_notification_total)
+
+11. Memory usage
+process_resident_memory_bytes{application=~"$application"}
+go_memstats_alloc_bytes{application=~"$application"}

@@ -13,7 +13,9 @@ import (
 	"time"
 
 	grpcruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -127,6 +129,7 @@ func (s *Scrapper) runRest(ctx context.Context) {
 	h := http.Handler(mux)
 	if s.cfg.RateLimitRPS > 0 && s.cfg.RateLimitBurst > 0 {
 		rl := newIPRateLimiter(s.cfg.RateLimitRPS, s.cfg.RateLimitBurst)
+		next := h
 		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 			if ip == "" {
@@ -136,12 +139,17 @@ func (s *Scrapper) runRest(ctx context.Context) {
 				w.WriteHeader(http.StatusTooManyRequests)
 				return
 			}
-			mux.ServeHTTP(w, r)
+			next.ServeHTTP(w, r)
 		})
 	}
+
+	root := http.NewServeMux()
+	root.Handle("/metrics", promhttp.Handler())
+	root.Handle("/", observability.InstrumentHTTP("rest", h))
+
 	s.log.Info("gateway listening at port", zap.String("port", s.cfg.ScrapperAddrHTTP))
 
-	if err = HTTPServe(ln, h); err != nil && !errors.Is(err, net.ErrClosed) {
+	if err = HTTPServe(ln, root); err != nil && !errors.Is(err, net.ErrClosed) {
 		s.log.Error("gateway serve error", zap.Error(err))
 	}
 }
@@ -153,7 +161,7 @@ func (s *Scrapper) runGrpc() {
 		s.log.Error("can open tcp socker", zap.Error(err))
 		ExitFn(-1)
 	}
-	srv := NewGrpcServer()
+	srv := NewGrpcServer(grpc.UnaryInterceptor(observability.UnaryServerInterceptor("grpc")))
 	s.grpcServer = srv
 
 	reflection.Register(srv)

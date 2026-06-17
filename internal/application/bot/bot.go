@@ -15,6 +15,7 @@ import (
 
 	grpcruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/config"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -136,6 +137,8 @@ func (b *Bot) handleIncomingMessage(upd domain.Message, ok bool) (bool, error) {
 	if text == "" {
 		return true, ErrEmptyText
 	}
+
+	observability.IncCommandRequest(upd.Command.String())
 
 	handled, err := b.handleTrackDialog(logger, upd)
 	if err != nil {

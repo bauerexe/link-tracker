@@ -4,6 +4,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application/scrapper/services/github"
 	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/repository/services/postgres"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability/instrumentation"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -28,9 +29,9 @@ func newChatRepo(
 ) (scrapperapp.ChatRepository, error) {
 	switch cfg.DBAccessType {
 	case "sql":
-		return rawrepo.NewChatRepository(pool), nil
+		return instrumentation.NewMeasuredChatRepository(rawrepo.NewChatRepository(pool)), nil
 	case "orm":
-		return ormrepo.NewChatRepository(pool), nil
+		return instrumentation.NewMeasuredChatRepository(ormrepo.NewChatRepository(pool)), nil
 	default:
 		return nil, config.ErrParseFile
 	}
@@ -42,16 +43,16 @@ func newLinkRepo(
 ) (scrapperapp.LinkRepository, error) {
 	switch cfg.DBAccessType {
 	case "sql":
-		return rawrepo.NewLinkRepository(pool), nil
+		return instrumentation.NewMeasuredLinkRepository(rawrepo.NewLinkRepository(pool)), nil
 	case "orm":
-		return ormrepo.NewLinkRepository(pool), nil
+		return instrumentation.NewMeasuredLinkRepository(ormrepo.NewLinkRepository(pool)), nil
 	default:
 		return nil, config.ErrParseFile
 	}
 }
 
 func newGithubRepository(pool *pgxpool.Pool) github.Repository {
-	return repository.NewGithubRepository(pool)
+	return instrumentation.NewMeasuredGitHubRepository(repository.NewGithubRepository(pool))
 }
 
 func newTrackLinkService(

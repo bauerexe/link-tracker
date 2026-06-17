@@ -14,5 +14,5 @@ COPY app.env /app/app.env
 COPY app.valkey.test.env /app/app.valkey.test.env
 COPY app.nocache.test.env /app/app.nocache.test.env
 ENV TZ=UTC
-EXPOSE 8082 50052
+EXPOSE 8082 50052 8011
 ENTRYPOINT ["/app/bot"]

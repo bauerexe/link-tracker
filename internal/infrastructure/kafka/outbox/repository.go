@@ -3,9 +3,11 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/observability"
 )
 
 const (
@@ -74,6 +76,8 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 }
 
 func InsertTx(ctx context.Context, tx pgx.Tx, msg Message) error {
+	started := time.Now()
+	defer observability.ObserveRequestDuration(observability.ScopeDatabase, "outbox_messages", started)
 
 	_, err := tx.Exec(ctx, insertOutboxTx,
 		msg.Topic,
@@ -88,6 +92,9 @@ func InsertTx(ctx context.Context, tx pgx.Tx, msg Message) error {
 }
 
 func (r *Repository) GetPending(ctx context.Context, limit int) ([]Message, error) {
+	started := time.Now()
+	defer observability.ObserveRequestDuration(observability.ScopeDatabase, "outbox_messages", started)
+
 	rows, err := r.pool.Query(ctx, selectOutboxTx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get pending outbox messages: %w", err)
@@ -121,6 +128,9 @@ func (r *Repository) GetPending(ctx context.Context, limit int) ([]Message, erro
 }
 
 func (r *Repository) MarkPublished(ctx context.Context, id int64) error {
+	started := time.Now()
+	defer observability.ObserveRequestDuration(observability.ScopeDatabase, "outbox_messages", started)
+
 	_, err := r.pool.Exec(ctx, updateMarkPublishedTx, id)
 	if err != nil {
 		return fmt.Errorf("mark outbox message published: %w", err)
@@ -130,6 +140,9 @@ func (r *Repository) MarkPublished(ctx context.Context, id int64) error {
 }
 
 func (r *Repository) MarkFailed(ctx context.Context, id int64, attempts int, maxAttempts int, cause error) error {
+	started := time.Now()
+	defer observability.ObserveRequestDuration(observability.ScopeDatabase, "outbox_messages", started)
+
 	lastError := ""
 	if cause != nil {
 		lastError = cause.Error()
